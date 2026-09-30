@@ -25,3 +25,7 @@ dependencyResolutionManagement {
 rootProject.name = "fsp"
 include(":app")
 include(":core:domain")
+include(":core:data")
+include(":core:navigation")
+include(":feature:auth")
+include(":feature:dashboard")
