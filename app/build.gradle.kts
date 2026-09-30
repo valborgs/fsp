@@ -5,6 +5,10 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// API base URL (e.g. https://host/api/v1) from `-Pfsp.apiBaseUrl=` or gradle.properties. Empty = not configured.
+val apiBaseUrl = providers.gradleProperty("fsp.apiBaseUrl").orElse("").get().trim()
+require(apiBaseUrl.isEmpty() || apiBaseUrl.startsWith("https://")) { "fsp.apiBaseUrl must use HTTPS" }
+
 android {
     namespace = "dev.comon.fsp"
     compileSdk {
@@ -19,6 +23,7 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
     }
 
     buildTypes {
@@ -34,12 +39,14 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:data"))
+    implementation(project(":core:network"))
     implementation(project(":core:navigation"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:dashboard"))
@@ -61,6 +68,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

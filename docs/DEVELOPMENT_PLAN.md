@@ -9,7 +9,7 @@
 | 단계 | 작업 | 완료 기준 | 상태 |
 | --- | --- | --- | --- |
 | 1A | 프로젝트 기반, 권한·시작 정책, 최초 진입 화면 | 핵심 정책 테스트, API 26 설정 빌드 | 완료 |
-| 1B | MVI, Hilt, Navigation 3, Room 3, Retrofit 3 통합 | DI 생성, 탐색 복원, DB 트랜잭션·마이그레이션, HTTP 계약 테스트 | 진행 중 (1B-1·1B-2 완료, 1B-3 다음) |
+| 1B | MVI, Hilt, Navigation 3, Room 3, Retrofit 3 통합 | DI 생성, 탐색 복원, DB 트랜잭션·마이그레이션, HTTP 계약 테스트 | 진행 중 (1B-1~1B-3 완료, 1B-4 다음) |
 | 2 | 로그인·계정·CSV·할당 관리 | 역할별 접근, CSV 원자적 등록, 할당 충돌 처리 | 대기 |
 | 3 | 다운로드·오프라인 선택·반복 출퇴근 | 유효 캐시만 사용, 재실행 복원, 로컬/Outbox 원자적 저장 | 대기 |
 | 4 | 3종 문항·자동 저장·제출 | 단일 선택/주관식/7점 척도, 버전 고정, 종료 후 복원 | 대기 |
@@ -21,7 +21,8 @@
 - `app`: Hilt Application, Navigation 3 루트 백스택(`FspNavigation`), 테마.
 - `core:navigation`: 직렬화 가능한 route 키(`LoginRoute`, `OfflineDashboardRoute`).
 - `core:database`: Room 3 `FspDatabase` v1(`local_session`, `survey_definition`, `outbox`), DAO, `LocalWriteTransaction`, Hilt 제공.
-- `core:data`: Repository 구현과 Hilt 바인딩. 설문 캐시는 Room(`RoomSurveyCacheRepository`), 로그인은 서버 미설정 구현.
+- `core:network`: Retrofit 3/OkHttp 5 `ApiClient`, 공통 envelope·오류 매핑(`ApiResult`/`ApiFailure`), 공통 헤더 인터셉터, `AuthApi`(로그인 DTO), `NetworkConfig`(HTTPS 기본 주소).
+- `core:data`: Repository 구현과 Hilt 바인딩. 설문 캐시는 Room(`RoomSurveyCacheRepository`), 로그인은 서버 미설정 구현, 설치 ID(`InstallationIdStore`).
 - `feature:auth`: 로그인 화면 MVI(State/Intent/Effect)와 `LoginViewModel`.
 - `feature:dashboard`: 계정 없는 모드 대시보드 MVI와 `OfflineDashboardViewModel`.
 - `core:domain`: Android에 의존하지 않는 역할·세션·할당·설문 시작 정책, Repository 인터페이스.
@@ -43,8 +44,8 @@
 | --- | --- | --- | --- |
 | 1B-1 | 멀티모듈 골격, Hilt/KSP, Navigation 3 백스택·엔트리 범위 ViewModel, MVI 전환 | Hilt 그래프 생성, MVI 단위 테스트, 백스택 복원 계측 테스트(API 26), 빌드·Lint | 완료 (2026-09-30) |
 | 1B-2 | `core:database`: Room 3 SQLiteDriver, 스키마 내보내기, 캐시·세션·Outbox 트랜잭션 | 로컬 저장+Outbox 원자성·롤백 테스트, 마이그레이션 테스트, `EmptySurveyCacheRepository` 교체 | 완료 (2026-09-30) |
-| 1B-3 | `core:network`: Retrofit 3, 성공/오류 envelope, 401/403/408/429/5xx·시간 제한 매핑 | MockWebServer 계약 테스트, 기본 주소 미설정 시 `SERVER_NOT_CONFIGURED` 유지 | 다음 작업 |
-| 1B-4 | 익명/계정 영역 분리, 백업 제외 규칙, Keystore 암호화 경계 | 백업 규칙 검증(`fsp.db` 제외 포함), 암호화 왕복 계측 테스트(API 26) | 대기 |
+| 1B-3 | `core:network`: Retrofit 3, 성공/오류 envelope, 401/403/408/429/5xx·시간 제한 매핑 | MockWebServer 계약 테스트, 기본 주소 미설정 시 `SERVER_NOT_CONFIGURED` 유지 | 완료 (2026-09-30) |
+| 1B-4 | 익명/계정 영역 분리, 백업 제외 규칙, Keystore 암호화 경계 | 백업 규칙 검증(`fsp.db` 제외 포함), 암호화 왕복 계측 테스트(API 26) | 다음 작업 |
 
 1B 전체는 1B-4까지 끝나고 API 26 기기 검증을 통과한 뒤 완료로 표시하고 2단계에 진입한다.
 
@@ -67,6 +68,8 @@ Navigation 3 1.2.0 + Room 3.0.3 + Hilt 2.60.1 + Kotlin 2.2.10 조합은 1B-2에�
 ## 외부 연동 준비 사항
 
 실서버 연동 시 HTTPS API 기본 주소와 역할별 테스트 계정이 필요하다.
+기본 주소는 Gradle 속성 `fsp.apiBaseUrl`(예: `-Pfsp.apiBaseUrl=https://host/api/v1`)로 주입하며 HTTPS가 아니면 빌드가 실패한다.
+기획서에 `User.resourceVersion`의 JSON 타입(정수/문자열)이 명시되지 않아 DTO에서 제외했다. 서버와 확정이 필요하다.
 주소·계정이 없어도 1B의 로컬 DB 및 HTTP 계약 테스트는 진행할 수 있다.
 API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실기기 모델 목록은 아직 확보하지 않았다.
 
@@ -212,29 +215,102 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
 - **1.json 수정 금지**: 운영 배포 전이더라도 커밋된 `1.json`을 제자리에서 수정하지 않는다. 스키마를 바꾸면 버전 2와 마이그레이션으로 처리한다.
 - **미검증**: 실제 프로세스 종료 후 DB 복원과 최신 OS·실기기 동작은 미검증이다(6단계).
 
-## 다음 단계: 1B-3 시작 작업
+## 1B-3 완료 기록 (2026-09-30)
 
-1. `core:network` Android 라이브러리 모듈을 추가한다.
-   - 의존성은 Retrofit 3.0.0(`com.squareup.retrofit2:retrofit`, `converter-kotlinx-serialization`), OkHttp 5.x, `kotlinx-serialization-json`(Kotlin 2.2 호환 버전), 테스트용 `mockwebserver3`다.
-   - 버전은 Kotlin 2.2.10과의 호환성을 먼저 확인한다.
-2. 기획서 11장 공통 계약의 DTO를 만든다.
-   - 성공: `{data, meta{requestId, serverTime}}`
-   - 실패: `{error{code, message, retryable, fields[]}, meta}`
-3. HTTP 결과를 도메인 오류로 매핑한다.
-   - 400, 401, 403, 404, 409, 410 RETENTION_EXPIRED, 412, 422, 428
-   - 일시 실패: 408, 429(Retry-After), 5xx, 시간 초과·연결 실패
-   - 재시도 횟수 정책은 5단계에서 구현하고, 이번에는 retryable 분류까지만 한다.
-4. 요청 헤더 인터셉터를 만든다: `X-Request-ID`, `X-Device-ID`, `X-App-Version`, `Authorization`.
-   - 릴리스 로깅에서는 본문과 인증 헤더를 비활성화한다.
-5. `POST /auth/login` 인터페이스와 DTO를 만들고 MockWebServer 계약 테스트를 작성한다.
-   - 기본 주소(`BuildConfig`)가 비어 있으면 기존처럼 `SERVER_NOT_CONFIGURED`를 반환하고 네트워크를 호출하지 않는다.
-   - 실제 로그인 성공 흐름과 토큰 저장은 2단계와 1B-4 범위다.
-6. 검증: 아래 전체 명령과 `:core:network` 테스트·Lint.
+### 구현 범위
+
+- `core:network` 모듈 추가: Retrofit 3.0.0, `converter-kotlinx-serialization` 3.0.0, OkHttp 5.5.0, `kotlinx-serialization-json` 1.9.0. `INTERNET` 권한을 선언한다.
+- 공통 응답 계약(기획서 11장): `ApiSuccess{data, meta}`, `ApiErrorBody{error{code, message, retryable, fields[{path, code}]}, meta{requestId, serverTime}}`.
+- `ApiClient.call(Service::class) { ... }`는 모든 결과를 `ApiResult`로 변환하며, 코루틴 취소만 예외로 전파한다.
+  - HTTP 상태별 매핑(`HttpFailureKind`)
+    - 재시도 불가: 400, 401, 403, 404, 409, 410 `RETENTION_EXPIRED`, 412, 413, 422, 428, 기타 상태(`UNEXPECTED`)
+    - 일시 실패(재시도 가능): 408, 429, 5xx
+  - 예외 매핑: 시간 초과(`InterruptedIOException`)는 `Network(TIMEOUT)`, 그 밖의 IO 오류는 `Network(CONNECTIVITY)`로 둘 다 재시도 가능하다. 계약과 다른 2xx 본문은 `MalformedResponse`로 재시도 불가다.
+  - 오류 본문이 envelope이 아니어도(프록시 HTML 등) 상태 코드로 분류하고, `X-Request-ID` 응답 헤더를 보존한다.
+  - `Retry-After`는 초 단위와 HTTP-date를 모두 해석하며 음수가 되지 않는다.
+  - 기본 주소가 없으면 Retrofit 인스턴스를 만들지 않고 `NotConfigured`를 반환한다(요청 0회).
+- `ClientHeadersInterceptor`
+  - 요청마다 새 UUID `X-Request-ID`를 붙이고, `X-Device-ID`와 `X-App-Version`도 붙인다.
+  - `Authorization: Bearer`는 토큰이 있을 때만 붙인다.
+  - 공개 API는 `@Headers(ClientHeadersInterceptor.NO_AUTH)`로 토큰 전송을 막는다. 내부 표시 헤더는 서버로 나가지 않는다.
+- OkHttp 설정: 연결 15초, 읽기 30초, 쓰기 30초, 전체 60초. `retryOnConnectionFailure(false)`로 재시도는 Outbox 정책에만 맡긴다. HTTP 로깅은 넣지 않았다(비밀번호·토큰 보호).
+- `AuthApi.login`(`POST auth/login`, 공개)과 DTO `LoginRequest{id, pw, deviceId}`, `LoginResponse`, `UserDto`를 추가했다. `toString`은 비밀번호와 토큰을 마스킹한다.
+- 설정: `fsp.apiBaseUrl` Gradle 속성을 `BuildConfig.API_BASE_URL`로 넘기고, `AppConfigModule`이 `NetworkConfig`를 제공한다.
+  - HTTPS가 아닌 주소는 Gradle 설정 단계와 `NetworkConfig.parse` 양쪽에서 거부한다.
+  - 매니페스트에 `usesCleartextTraffic="false"`를 적용했다.
+- `InstallationIdStore`: 설치 단위 UUID를 `noBackupFilesDir/installation-id`에 원자적으로 저장한다. 백업·복원 대상에서 빠지고 재설치 시 새 ID가 되며, 파일이 손상되면 다시 만든다.
+- `NetworkIdentityModule`: `DeviceIdProvider`와 `AccessTokenProvider`를 제공한다. 토큰 제공자는 계정 세션이 아직 없으므로 항상 null을 반환한다.
+- `NetworkGraphEntryPoint`(app): 아직 네트워크를 쓰는 화면이 없어도 Hilt가 네트워크 그래프를 컴파일 시점에 검증하도록 강제한다. 2단계에서 저장소가 `ApiClient`를 주입받으면 제거한다.
+- 로그인 화면 동작은 바꾸지 않았다. `UnconfiguredAuthRepository`가 계속 `SERVER_NOT_CONFIGURED`를 반환한다. 로그인 성공 처리와 토큰 저장은 2단계와 1B-4 범위다.
+
+### 주요 변경 파일
+
+- `gradle/libs.versions.toml`, `settings.gradle.kts`, `core/network/build.gradle.kts`, `core/network/src/main/AndroidManifest.xml`, `core/data/build.gradle.kts`, `app/build.gradle.kts`, `app/src/main/AndroidManifest.xml`
+- `core/network/src/main/kotlin/dev/comon/fsp/core/network/{NetworkConfig,ApiEnvelope,ApiResult,ApiClient,ClientHeadersInterceptor}.kt`, `auth/AuthApi.kt`, `di/NetworkModule.kt`
+- `core/data/.../{InstallationIdStore,di/NetworkIdentityModule}.kt`, `app/.../di/{AppConfigModule,NetworkGraphEntryPoint}.kt`
+- 테스트: `core/network/src/test/.../{ApiClientContractTest,NetworkConfigTest}.kt`, `core/data/src/test/.../InstallationIdStoreTest.kt`, `app/src/androidTest/.../NetworkGraphTest.kt`
+
+### 설계 결정
+
+- **재시도 판단 기준**: 재시도 가능 여부는 HTTP 상태로 판단하고, 서버 본문의 `retryable`은 참고하지 않는다. 기획서 6장이 “타임아웃·연결 실패·408·429·5xx”로 정했기 때문이다. 재시도 횟수(최초 + 추가 3회)와 간격은 5단계 Outbox Worker에서 구현한다.
+- **`resourceVersion` 제외**: `UserDto.resourceVersion`은 기획서에 JSON 타입이 없어 제외했다. `ignoreUnknownKeys`이므로 서버가 보내도 파싱에는 영향이 없다.
+- **Hilt 검증 방식**: Dagger `fullBindingGraphValidation` 옵션을 시험했지만 쓰지 않았다.
+  - KSP와 `hiltJavaCompile` 양쪽에 넣어 봐도 쓰이지 않는 모듈의 누락 바인딩을 보고하지 않았다(음성 시험으로 확인).
+  - 그래서 `@EntryPoint` 방식을 채택했다.
+  - `AccessTokenProvider` 바인딩을 빼면 `[Dagger/MissingBinding]`으로 빌드가 실패하고, 복원하면 성공하는 것을 확인했다.
+
+### 실행한 검증과 결과
+
+- 단위 테스트 합계 48개, 실패 0개.
+  - `:core:domain:test` 10개
+  - `:core:data:testDebugUnitTest` 6개
+  - `:core:network:testDebugUnitTest` 18개
+  - `:feature:auth:testDebugUnitTest` 7개
+  - `:feature:dashboard:testDebugUnitTest` 4개
+  - `:app:testDebugUnitTest` 3개
+- 네트워크 계약 테스트(MockWebServer, 로컬 HTTP): 다음을 확인했다.
+  - 로그인 경로, 메서드, JSON 본문(비밀번호를 가공 없이 전송)
+  - 공통 헤더, 공개 API에 토큰 미전송, 인증 API의 Bearer 헤더
+  - 요청마다 다른 요청 ID
+  - 오류 envelope 파싱과 상태 코드 15종의 매핑·재시도 가능 여부
+  - 410 최종 실패, 429 `Retry-After`
+  - 비 envelope 오류 본문, 계약과 다른 성공 본문
+  - 시간 초과, 연결 실패, 주소 미설정 시 요청 0회
+- `:core:database:connectedDebugAndroidTest`(API 26): 11개 통과.
+- `:app:connectedDebugAndroidTest`(API 26): 6개 통과. 기존 4개에 `NetworkGraphTest` 2개가 추가됐다.
+  - 실제 Hilt 그래프에서 주소 미설정 시 `NotConfigured`가 반환된다.
+  - 설치 ID가 UUID이고 `no_backup`에 저장된다.
+  - 추가로 `am instrument`로 3회 반복 실행했고 모두 통과했다.
+- `:app:assembleDebug`: 성공. `BuildConfig.API_BASE_URL=""` 기본값을 확인했다. `-Pfsp.apiBaseUrl=http://...`는 “fsp.apiBaseUrl must use HTTPS”로 빌드가 실패한다.
+- Lint: app은 오류 0개, 경고 18개다. 새 경고 1개는 `kotlinx-serialization-json` 새 버전 안내다. `core:network`를 포함한 나머지 모듈은 이슈가 없다.
+
+### 남은 문제·미검증 항목
+
+- **실서버 미검증**: 서버와의 실제 통신, TLS 인증서, 서버 측 오류 형식은 검증하지 않았다. 모든 HTTP 검증은 로컬 MockWebServer 기준이다. 실서버 주소와 계정이 필요하다.
+- **로그인 흐름 미연결**: 로그인 화면은 아직 네트워크를 쓰지 않는다. 2단계에서 할 일은 다음과 같다.
+  - `ApiFailure`를 `LoginFailure`로 매핑한다(401 → 자격 증명 오류, 네트워크 오류 → NETWORK, 409 `ACTIVE_DEVICE_EXISTS` 등).
+  - 성공 시 세션과 토큰을 저장한다.
+- **토큰 갱신 미구현**: 401 발생 시 토큰 갱신 1회 규칙은 2단계에서 구현한다.
+- **백업·평문 저장(1B-2에서 이어짐)**: `fsp.db` 자동 백업 포함과 Outbox 평문 저장 문제가 남아 있다. 1B-4에서 해결한다.
+
+## 다음 단계: 1B-4 시작 작업
+
+1. **백업 제외 규칙**
+   - `app/src/main/res/xml/backup_rules.xml`(API 26~30 `full-backup-content`)과 `data_extraction_rules.xml`(API 31+ `cloud-backup`, `device-transfer`)을 채운다.
+   - 제외 대상: `database` 도메인의 `fsp.db`(`-wal`, `-shm` 포함)와 앞으로 만들 토큰·키 관련 파일.
+   - 규칙 XML을 파싱하는 테스트로 검증한다.
+2. **Keystore 암호화 경계**
+   - AndroidKeyStore의 AES-256-GCM 키(API 23+)를 쓰는 `CryptoBox`(암호화/복호화, 연관 데이터(AAD) 포함)를 만든다.
+   - API 26 계측 테스트: 암호화 왕복, 암호문 변조 감지, 키 분실 시 명확한 오류.
+3. **토큰 저장소 설계**: Refresh Token을 암호화해 `noBackupFilesDir`에 저장한다. `AccessTokenProvider`는 메모리 세션을 읽는다. 실제 로그인과의 연결은 2단계에서 한다.
+4. **Outbox 페이로드 암호화**: `payloadJson`을 `CryptoBox`로 암호화해 같은 TEXT 컬럼에 저장한다. 스키마는 바뀌지 않는다. 기존 평문 행이 없으므로 마이그레이션은 필요 없다.
+5. **계정/익명 영역 분리**: `local_session` 기반으로 현재 작업 영역(ACCOUNT userId / ANONYMOUS)을 정하고, 조회 범위를 한정하는 규칙을 문서화하고 테스트한다.
+6. 1B-4가 끝나면 1B 전체 완료 조건(API 26 검증)을 확인하고 2단계에 진입한다.
 
 전체 검증 명령(API 26 에뮬레이터 실행 및 화면 켜짐 상태 필요):
 
 ```powershell
-.\gradlew.bat :core:domain:test :core:data:testDebugUnitTest :feature:auth:testDebugUnitTest :feature:dashboard:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug :core:data:lintDebug :core:database:lintDebug :core:navigation:lintDebug :feature:auth:lintDebug :feature:dashboard:lintDebug :core:database:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+.\gradlew.bat :core:domain:test :core:data:testDebugUnitTest :core:network:testDebugUnitTest :feature:auth:testDebugUnitTest :feature:dashboard:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug :core:data:lintDebug :core:database:lintDebug :core:network:lintDebug :core:navigation:lintDebug :feature:auth:lintDebug :feature:dashboard:lintDebug :core:database:connectedDebugAndroidTest :app:connectedDebugAndroidTest
 ```
 
 API 26 AVD 준비:
