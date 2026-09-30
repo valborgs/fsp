@@ -4,7 +4,7 @@ import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import dev.comon.fsp.core.data.EmptySurveyCacheRepository
+import dev.comon.fsp.core.data.RoomSurveyCacheRepository
 import dev.comon.fsp.core.data.UnconfiguredAuthRepository
 import dev.comon.fsp.domain.AuthRepository
 import dev.comon.fsp.domain.SurveyCacheRepository
@@ -16,5 +16,5 @@ abstract class DataModule {
     abstract fun bindAuthRepository(impl: UnconfiguredAuthRepository): AuthRepository
 
     @Binds
-    abstract fun bindSurveyCacheRepository(impl: EmptySurveyCacheRepository): SurveyCacheRepository
+    abstract fun bindSurveyCacheRepository(impl: RoomSurveyCacheRepository): SurveyCacheRepository
 }

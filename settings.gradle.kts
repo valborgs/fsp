@@ -26,6 +26,7 @@ rootProject.name = "fsp"
 include(":app")
 include(":core:domain")
 include(":core:data")
+include(":core:database")
 include(":core:navigation")
 include(":feature:auth")
 include(":feature:dashboard")
