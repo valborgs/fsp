@@ -6,6 +6,7 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
+import dev.comon.fsp.core.data.AccessTokenHolder
 import dev.comon.fsp.core.data.InstallationIdStore
 import dev.comon.fsp.core.network.AccessTokenProvider
 import dev.comon.fsp.core.network.DeviceIdProvider
@@ -20,7 +21,7 @@ object NetworkIdentityModule {
     fun provideDeviceIdProvider(@ApplicationContext context: Context): DeviceIdProvider =
         InstallationIdStore(File(context.noBackupFilesDir, "installation-id"))
 
-    /** No account session exists until login and encrypted token storage land (stage 2 / 1B-4). */
+    /** In-memory token of the signed-in account; null until stage 2 sign-in stores one. */
     @Provides
-    fun provideAccessTokenProvider(): AccessTokenProvider = AccessTokenProvider { null }
+    fun provideAccessTokenProvider(holder: AccessTokenHolder): AccessTokenProvider = holder
 }

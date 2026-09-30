@@ -9,8 +9,8 @@
 | 단계 | 작업 | 완료 기준 | 상태 |
 | --- | --- | --- | --- |
 | 1A | 프로젝트 기반, 권한·시작 정책, 최초 진입 화면 | 핵심 정책 테스트, API 26 설정 빌드 | 완료 |
-| 1B | MVI, Hilt, Navigation 3, Room 3, Retrofit 3 통합 | DI 생성, 탐색 복원, DB 트랜잭션·마이그레이션, HTTP 계약 테스트 | 진행 중 (1B-1~1B-3 완료, 1B-4 다음) |
-| 2 | 로그인·계정·CSV·할당 관리 | 역할별 접근, CSV 원자적 등록, 할당 충돌 처리 | 대기 |
+| 1B | MVI, Hilt, Navigation 3, Room 3, Retrofit 3 통합 | DI 생성, 탐색 복원, DB 트랜잭션·마이그레이션, HTTP 계약 테스트 | 완료 (2026-09-30, 1B-1~1B-4) |
+| 2 | 로그인·계정·CSV·할당 관리 | 역할별 접근, CSV 원자적 등록, 할당 충돌 처리 | 다음 작업 |
 | 3 | 다운로드·오프라인 선택·반복 출퇴근 | 유효 캐시만 사용, 재실행 복원, 로컬/Outbox 원자적 저장 | 대기 |
 | 4 | 3종 문항·자동 저장·제출 | 단일 선택/주관식/7점 척도, 버전 고정, 종료 후 복원 | 대기 |
 | 5 | 선택 전송·현황·검수 | 멱등성, 추가 3회 재시도, 반려 revision, If-Match 충돌 | 대기 |
@@ -22,7 +22,8 @@
 - `core:navigation`: 직렬화 가능한 route 키(`LoginRoute`, `OfflineDashboardRoute`).
 - `core:database`: Room 3 `FspDatabase` v1(`local_session`, `survey_definition`, `outbox`), DAO, `LocalWriteTransaction`, Hilt 제공.
 - `core:network`: Retrofit 3/OkHttp 5 `ApiClient`, 공통 envelope·오류 매핑(`ApiResult`/`ApiFailure`), 공통 헤더 인터셉터, `AuthApi`(로그인 DTO), `NetworkConfig`(HTTPS 기본 주소).
-- `core:data`: Repository 구현과 Hilt 바인딩. 설문 캐시는 Room(`RoomSurveyCacheRepository`), 로그인은 서버 미설정 구현, 설치 ID(`InstallationIdStore`).
+- `core:security`: Android Keystore AES-256-GCM `DataCipher`(`KeystoreDataCipher`), 암호화된 Refresh Token 저장소(`RefreshTokenStore`).
+- `core:data`: Repository 구현과 Hilt 바인딩. 설문 캐시는 Room(`RoomSurveyCacheRepository`), 로그인은 서버 미설정 구현, 설치 ID(`InstallationIdStore`), 메모리 Access Token(`AccessTokenHolder`)과 `SessionCredentials`, Outbox 페이로드 암호화(`OutboxOperations`).
 - `feature:auth`: 로그인 화면 MVI(State/Intent/Effect)와 `LoginViewModel`.
 - `feature:dashboard`: 계정 없는 모드 대시보드 MVI와 `OfflineDashboardViewModel`.
 - `core:domain`: Android에 의존하지 않는 역할·세션·할당·설문 시작 정책, Repository 인터페이스.
@@ -45,9 +46,9 @@
 | 1B-1 | 멀티모듈 골격, Hilt/KSP, Navigation 3 백스택·엔트리 범위 ViewModel, MVI 전환 | Hilt 그래프 생성, MVI 단위 테스트, 백스택 복원 계측 테스트(API 26), 빌드·Lint | 완료 (2026-09-30) |
 | 1B-2 | `core:database`: Room 3 SQLiteDriver, 스키마 내보내기, 캐시·세션·Outbox 트랜잭션 | 로컬 저장+Outbox 원자성·롤백 테스트, 마이그레이션 테스트, `EmptySurveyCacheRepository` 교체 | 완료 (2026-09-30) |
 | 1B-3 | `core:network`: Retrofit 3, 성공/오류 envelope, 401/403/408/429/5xx·시간 제한 매핑 | MockWebServer 계약 테스트, 기본 주소 미설정 시 `SERVER_NOT_CONFIGURED` 유지 | 완료 (2026-09-30) |
-| 1B-4 | 익명/계정 영역 분리, 백업 제외 규칙, Keystore 암호화 경계 | 백업 규칙 검증(`fsp.db` 제외 포함), 암호화 왕복 계측 테스트(API 26) | 다음 작업 |
+| 1B-4 | 익명/계정 영역 분리, 백업 제외 규칙, Keystore 암호화 경계 | 백업 규칙 검증(`fsp.db` 제외 포함), 암호화 왕복 계측 테스트(API 26) | 완료 (2026-09-30) |
 
-1B 전체는 1B-4까지 끝나고 API 26 기기 검증을 통과한 뒤 완료로 표시하고 2단계에 진입한다.
+1B 전체는 1B-4까지 끝나고 API 26 기기 검증을 통과해 2026-09-30 완료로 표시했다. 다음은 2단계다.
 
 공식 릴리스 확인: Room 3.0.3은 androidx.room3 패키지, KSP 및 SQLiteDriver를 사용한다.
 Navigation 3 1.2.0 + Room 3.0.3 + Hilt 2.60.1 + Kotlin 2.2.10 조합은 1B-2에서 빌드와 API 26 계측 테스트로 확인했다.
@@ -209,8 +210,8 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
 
 ### 남은 문제·미검증 항목
 
-- **백업**: 현재 `allowBackup=true`이고 백업 규칙이 비어 있어 `fsp.db`가 자동 백업에 포함된다. 지금은 DB에 업무 데이터를 쓰는 기능이 없다. 1B-4에서 백업 제외 규칙을 적용해야 하며, 3단계에서 근태·응답을 쓰기 전에 반드시 완료해야 한다.
-- **암호화**: `outbox.payloadJson`과 앞으로 저장할 응답 JSON은 평문이다. Keystore 암호화는 1B-4 범위다.
+- **백업**(1B-4에서 해결): 당시 `allowBackup=true`이고 백업 규칙이 비어 있어 `fsp.db`가 자동 백업에 포함된다. 지금은 DB에 업무 데이터를 쓰는 기능이 없다. 1B-4에서 백업 제외 규칙을 적용해야 하며, 3단계에서 근태·응답을 쓰기 전에 반드시 완료해야 한다.
+- **암호화**(1B-4에서 해결): 당시 `outbox.payloadJson`은 평문이었다. 1B-4에서 `OutboxOperations`로 암호화한다. 앞으로 저장할 응답 JSON도 같은 방식으로 암호화해야 한다.
 - **스키마 범위**: `AttendanceEvent/Meta`, `Response`, `ResponseRevision`, `ReviewEvent`, `DashboardCache`, `ErrorEvent`는 아직 없다(3~5단계). 추가할 때마다 버전을 올리고 마이그레이션 테스트를 추가한다.
 - **1.json 수정 금지**: 운영 배포 전이더라도 커밋된 `1.json`을 제자리에서 수정하지 않는다. 스키마를 바꾸면 버전 2와 마이그레이션으로 처리한다.
 - **미검증**: 실제 프로세스 종료 후 DB 복원과 최신 OS·실기기 동작은 미검증이다(6단계).
@@ -291,26 +292,118 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
   - `ApiFailure`를 `LoginFailure`로 매핑한다(401 → 자격 증명 오류, 네트워크 오류 → NETWORK, 409 `ACTIVE_DEVICE_EXISTS` 등).
   - 성공 시 세션과 토큰을 저장한다.
 - **토큰 갱신 미구현**: 401 발생 시 토큰 갱신 1회 규칙은 2단계에서 구현한다.
-- **백업·평문 저장(1B-2에서 이어짐)**: `fsp.db` 자동 백업 포함과 Outbox 평문 저장 문제가 남아 있다. 1B-4에서 해결한다.
+- **백업·평문 저장(1B-2에서 이어짐)**: 1B-4에서 해결했다.
 
-## 다음 단계: 1B-4 시작 작업
+## 1B-4 완료 기록 (2026-09-30)
 
-1. **백업 제외 규칙**
-   - `app/src/main/res/xml/backup_rules.xml`(API 26~30 `full-backup-content`)과 `data_extraction_rules.xml`(API 31+ `cloud-backup`, `device-transfer`)을 채운다.
-   - 제외 대상: `database` 도메인의 `fsp.db`(`-wal`, `-shm` 포함)와 앞으로 만들 토큰·키 관련 파일.
-   - 규칙 XML을 파싱하는 테스트로 검증한다.
-2. **Keystore 암호화 경계**
-   - AndroidKeyStore의 AES-256-GCM 키(API 23+)를 쓰는 `CryptoBox`(암호화/복호화, 연관 데이터(AAD) 포함)를 만든다.
-   - API 26 계측 테스트: 암호화 왕복, 암호문 변조 감지, 키 분실 시 명확한 오류.
-3. **토큰 저장소 설계**: Refresh Token을 암호화해 `noBackupFilesDir`에 저장한다. `AccessTokenProvider`는 메모리 세션을 읽는다. 실제 로그인과의 연결은 2단계에서 한다.
-4. **Outbox 페이로드 암호화**: `payloadJson`을 `CryptoBox`로 암호화해 같은 TEXT 컬럼에 저장한다. 스키마는 바뀌지 않는다. 기존 평문 행이 없으므로 마이그레이션은 필요 없다.
-5. **계정/익명 영역 분리**: `local_session` 기반으로 현재 작업 영역(ACCOUNT userId / ANONYMOUS)을 정하고, 조회 범위를 한정하는 규칙을 문서화하고 테스트한다.
-6. 1B-4가 끝나면 1B 전체 완료 조건(API 26 검증)을 확인하고 2단계에 진입한다.
+### 구현 범위
+
+- **백업 제외**
+  - `backup_rules.xml`(API 26~30)은 `database` 도메인 전체를 제외한다.
+  - `data_extraction_rules.xml`(API 31+)은 `cloud-backup`과 `device-transfer` 모두에서 `database` 도메인 전체를 제외한다.
+  - 토큰과 설치 ID는 `noBackupFilesDir`에 있으므로 플랫폼이 백업하지 않는다.
+- **`core:security` 모듈 추가**
+  - `DataCipher`/`KeystoreDataCipher`: AndroidKeyStore의 AES-256-GCM 비추출 키(별칭 `fsp.data.v1`)를 쓴다.
+  - 출력 형식은 `v1:` + Base64(IV 12바이트 + 암호문 + 태그 16바이트)이고, 연관 데이터(AAD)를 필수로 받는다.
+  - 오류는 `CipherException.Tampered`(변조·AAD 불일치), `KeyUnavailable`(키 없음·무효화), `Malformed`(형식 오류)로 구분한다.
+  - 키는 암호화할 때만 만든다. 복호화는 키를 만들지 않으므로, 키가 없으면 조용히 새 키를 만드는 대신 오류로 드러난다.
+  - `RefreshTokenStore`: `no_backup/session/refresh-token`에 `v1` 형식 표시, 사용자 ID, 암호문 세 줄을 원자적으로 저장한다.
+    - AAD에 사용자 ID가 들어가 다른 계정으로는 읽을 수 없다.
+    - 복호화할 수 없거나 형식이 틀린 파일은 삭제하고 null을 반환한다(재로그인으로 복구). 비밀번호는 저장하지 않는다.
+  - `SecurityModule`(Hilt)이 `DataCipher`와 `RefreshTokenStore`를 제공한다.
+- **`core:data` 추가**
+  - `AccessTokenHolder`: 메모리 전용 Access Token이다. `AccessTokenProvider` 바인딩으로, 이전의 항상 null 구현을 대체했다.
+  - `SessionCredentials`: `store`(로그인 성공 시)와 `clear`(로그아웃 시 두 토큰 삭제, 미전송 기록은 보존)를 한곳에서 처리한다.
+  - `OutboxOperations`: Outbox 행을 만들 때 페이로드를 암호화하고, `payload()`로 복호화한다.
+    - AAD는 `outbox:v1:{operationId}:{ownerUserId}:{kind}:{entityId}`다. 소유자나 대상이 바뀐 행은 복호화되지 않는다.
+    - Keystore 작업은 DB 트랜잭션 밖에서 행을 만든 뒤, 트랜잭션 안에서 삽입하는 방식으로 사용한다.
+- **도메인 `DataScopePolicy.canAccess`**
+  - 계정 세션은 자기 소유 기록만, 익명 세션은 소유자가 없는 기록만 본다.
+  - 슈퍼바이저도 기기에 있는 다른 조사원의 기록은 볼 수 없다. 조사원 기록은 서버를 통해 열람한다.
+- **app**: 진입점을 `InfrastructureGraphEntryPoint`로 확장했다(네트워크·자격 증명·Outbox 암호화 그래프를 컴파일 시점에 검증).
+
+### 주요 변경 파일
+
+- `settings.gradle.kts`, `core/security/build.gradle.kts`, `core/data/build.gradle.kts`, `app/build.gradle.kts`
+- `app/src/main/res/xml/{backup_rules,data_extraction_rules}.xml`
+- `core/security/src/main/kotlin/dev/comon/fsp/core/security/{DataCipher,KeystoreDataCipher,RefreshTokenStore,di/SecurityModule}.kt`
+- `core/data/.../{SessionCredentials,OutboxOperations,di/NetworkIdentityModule}.kt`, `core/domain/.../DataScopePolicy.kt`
+- `app/.../di/InfrastructureGraphEntryPoint.kt`(이전 `NetworkGraphEntryPoint`)
+- 테스트
+  - JVM: `app/src/test/.../BackupRulesTest.kt`, `core/security/src/test/.../RefreshTokenStoreTest.kt`, `core/data/src/test/.../{FakeCipher,OutboxOperationsTest,SessionCredentialsTest}.kt`, `core/domain/src/test/.../DataScopePolicyTest.kt`
+  - API 26 계측: `core/security/src/androidTest/.../KeystoreDataCipherTest.kt`, `app/src/androidTest/.../InfrastructureGraphTest.kt`(이전 `NetworkGraphTest`)
+
+### 설계 결정
+
+- **DB 전체 백업 제외**: 파일 단위로 나열하는 대신 DB 전체를 제외한다. 암호화 키는 백업되지 않으므로 복원된 암호문은 어차피 쓸 수 없다. 기기를 교체하기 전에는 동기화를 먼저 끝내야 한다(기획서 8장).
+- **DB 전체 암호화 미채택**: SQLCipher 등은 쓰지 않고, 민감 열(Outbox 페이로드, 이후 응답 JSON)만 필드 단위로 암호화한다. 기획서 8장이 “Room 자체를 암호화 솔루션으로 간주하지 않는다”고 하고, Room 3 SQLiteDriver 호환성 검증 부담도 줄이기 위해서다.
+- **스키마 유지**: Outbox 열 이름 `payloadJson`은 v1 스키마를 유지하려고 그대로 두었다. 이제 이 열에는 암호문이 저장된다.
+- **Keystore 키 조건**: Keystore 키에 사용자 인증 조건은 걸지 않았다. 현장 오프라인 작업 중 잠금 화면 설정이 바뀌어도 키가 무효화되지 않게 하기 위해서다.
+
+### 실행한 검증과 결과
+
+- 단위 테스트 합계 66개, 실패 0개.
+  - domain 13개, data 13개, network 18개, security 6개, auth 7개, dashboard 4개, app 5개
+  - app에 `BackupRulesTest` 2개가 추가됐다.
+- API 26 계측 테스트(`Fsp_API26`) 합계 24개, 모두 통과.
+  - `:core:database:connectedDebugAndroidTest` 11개
+  - `:core:security:connectedDebugAndroidTest` 5개
+    - 실제 Keystore로 암호화 왕복과 무작위 IV를 확인했다.
+    - AAD 불일치와 암호문 1비트 변조는 `Tampered`로 거부된다.
+    - 외부 입력과 잘린 입력은 `Malformed`다.
+    - 키를 삭제하면 `KeyUnavailable`이 나고 복호화 과정에서 키를 다시 만들지 않는다. 새 키로는 옛 데이터를 읽을 수 없다.
+  - `:app:connectedDebugAndroidTest` 8개
+    - `InfrastructureGraphTest`: 실제 Hilt 그래프에서 토큰이 저장 시 암호화되고 로그아웃 시 삭제되며, Outbox 페이로드가 Keystore로 암호화된다.
+  - app 8개와 security 5개 스위트는 `am instrument`로 각각 3회 추가 반복했고 모두 통과했다.
+- 최종 APK 매니페스트(`aapt2 dump xmltree`)에서 `fullBackupContent`, `dataExtractionRules` 연결과 `usesCleartextTraffic=false`, `INTERNET` 권한을 확인했다.
+- `:app:assembleDebug`: 성공.
+- Lint: app은 오류 0개, 경고 18개(1B-3과 같다). `core:security`를 포함한 나머지 모듈은 이슈가 없다.
+
+### 남은 문제·미검증 항목
+
+- **실제 백업 미검증**: `bmgr backupnow` 같은 실제 백업·복원 전송으로 제외가 적용되는지는 확인하지 않았다. google_apis_playstore 이미지는 루트 권한이 없어 백업 결과를 확인할 수 없다. 현재 검증 근거는 규칙 XML 테스트와 APK 매니페스트 연결 확인이다.
+- **Keystore 무효화 미검증**: 실기기에서 Keystore 키가 무효화되는 경우(OS 업데이트, 잠금 화면 변경 등)의 동작은 미검증이다. 키 삭제로 흉내 낸 경우만 검증했다.
+- **응답 JSON 암호화**: 응답 JSON 암호화는 응답 테이블을 추가하는 4단계에서 `DataCipher`로 적용해야 한다.
+- **작업 영역 연결**: `local_session`에 현재 작업 영역을 실제로 기록하고 복원하는 흐름은 2단계(계정)와 3단계(익명 출퇴근)에서 연결한다.
+
+## 다음 단계: 2단계 시작 작업 (로그인·계정·CSV·할당 관리)
+
+2단계도 하위 단계로 나눠 진행한다. 서버가 없어도 할 수 있는 작업을 앞에 둔다.
+
+1. **2-1 로그인·세션**
+   - `LoginResult.Success`(세션·역할)를 추가하고, `ApiClient`와 `AuthApi`를 쓰는 `NetworkAuthRepository`를 만든다.
+   - `ApiFailure`를 `LoginFailure`로 매핑한다.
+     - 401 → 자격 증명 오류. 계정 존재 여부는 노출하지 않는다.
+     - 409 `ACTIVE_DEVICE_EXISTS`
+     - 403
+     - 네트워크 오류, 서버 미설정
+   - 성공하면 `SessionCredentials.store`로 토큰을 저장하고 `local_session`에 ACCOUNT 행을 기록한다.
+   - 401이 오면 토큰 갱신을 1회 시도한다(`/auth/refresh`, Refresh Token 회전).
+   - 로그아웃은 `/auth/logout`을 호출하고 `SessionCredentials.clear`를 실행한다. 백스택에서는 인증 이후 엔트리를 제거한다.
+   - 역할별 첫 화면 route를 둔다. 조사원 대시보드와 관리 대시보드는 골격만 만든다.
+   - MockWebServer 계약 테스트와 ViewModel 테스트를 작성한다.
+2. **2-2 계정 입력 검증과 CSV 파서**(서버 없이 가능)
+   - 아이디(영문·숫자 4~30자, 대소문자 구분 없이 유일), 이름, 비밀번호(12~64자, 3종 포함, trim 금지) 검증을 만든다.
+   - RFC 4180 CSV 파서: UTF-8/BOM, 따옴표·이스케이프, 헤더 `id,pw,name,grade`, 최대 1,000행·1 MiB, grade 1 거부, 파일 안 중복 검출.
+   - 행 오류는 헤더를 1행으로 센 행 번호와 필드, 코드로 보고하고 비밀번호는 표시하지 않는다.
+3. **2-3 어드민 계정 관리 화면과 API**
+   - `/users`, `/user-imports/validate`, `/user-imports/{importId}/commit`(Idempotency-Key)을 연결한다.
+   - If-Match 412/428을 처리한다.
+4. **2-4 슈퍼바이저·어드민 할당 관리 화면과 API**
+   - `/interviewers`, `/interviewers/{userId}/survey-assignment`(GET/PUT, If-Match slotVersion, Idempotency-Key), 이력 API를 연결한다.
+   - 412 충돌이 나면 최신 할당을 다시 보여 주고 자동으로 덮어쓰지 않는다.
+
+필요한 외부 정보:
+- HTTPS API 기본 주소와 역할별(1/2/3) 테스트 계정
+- `User.resourceVersion`의 JSON 타입
+- `/auth/refresh` 응답 형식의 세부 사항
+
+이 정보가 없으면 2-1·2-3·2-4는 MockWebServer 계약 테스트까지만 진행하고, 실서버 연동은 미검증으로 남긴다.
 
 전체 검증 명령(API 26 에뮬레이터 실행 및 화면 켜짐 상태 필요):
 
 ```powershell
-.\gradlew.bat :core:domain:test :core:data:testDebugUnitTest :core:network:testDebugUnitTest :feature:auth:testDebugUnitTest :feature:dashboard:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug :core:data:lintDebug :core:database:lintDebug :core:network:lintDebug :core:navigation:lintDebug :feature:auth:lintDebug :feature:dashboard:lintDebug :core:database:connectedDebugAndroidTest :app:connectedDebugAndroidTest
+.\gradlew.bat :core:domain:test :core:data:testDebugUnitTest :core:network:testDebugUnitTest :core:security:testDebugUnitTest :feature:auth:testDebugUnitTest :feature:dashboard:testDebugUnitTest :app:testDebugUnitTest :app:assembleDebug :app:lintDebug :core:data:lintDebug :core:database:lintDebug :core:network:lintDebug :core:security:lintDebug :core:navigation:lintDebug :feature:auth:lintDebug :feature:dashboard:lintDebug :core:database:connectedDebugAndroidTest :core:security:connectedDebugAndroidTest :app:connectedDebugAndroidTest
 ```
 
 API 26 AVD 준비:

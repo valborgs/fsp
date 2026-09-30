@@ -5,12 +5,13 @@ plugins {
 }
 
 android {
-    namespace = "dev.comon.fsp.core.data"
+    namespace = "dev.comon.fsp.core.security"
     compileSdk {
         version = release(37)
     }
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -19,12 +20,9 @@ android {
 }
 
 dependencies {
-    api(project(":core:domain"))
-    implementation(project(":core:database"))
-    implementation(project(":core:network"))
-    implementation(project(":core:security"))
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     testImplementation(libs.junit)
-    testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
