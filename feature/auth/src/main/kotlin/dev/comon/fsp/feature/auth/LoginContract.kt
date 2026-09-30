@@ -8,6 +8,8 @@ data class LoginUiState(
     val password: String = "",
     val submitting: Boolean = false,
     val failure: LoginFailure? = null,
+    /** Seconds to wait after RATE_LIMITED, when the server said so. */
+    val retryAfterSeconds: Long? = null,
 ) {
     val canSubmit: Boolean get() = loginId.isNotBlank() && password.isNotEmpty() && !submitting
 
@@ -26,4 +28,7 @@ sealed interface LoginIntent {
 
 sealed interface LoginEffect {
     data object OpenOfflineMode : LoginEffect
+
+    /** Session and tokens are stored; open the account home and drop the login entry. */
+    data object SignedIn : LoginEffect
 }

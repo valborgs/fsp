@@ -5,6 +5,7 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
+import retrofit2.Call
 import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -42,19 +43,39 @@ class ApiClient @Inject constructor(
         service: KClass<S>,
         request: suspend S.() -> Response<ApiSuccess<T>>,
     ): ApiResult<T> {
-        val client = retrofit ?: return ApiResult.Failure(ApiFailure.NotConfigured)
-        @Suppress("UNCHECKED_CAST")
-        val api = services.getOrPut(service) { client.create(service.java) } as S
-        return execute { api.request() }
+        val api = service(service) ?: return ApiResult.Failure(ApiFailure.NotConfigured)
+        return guard { envelope(api.request()) }
     }
 
-    private suspend fun <T> execute(request: suspend () -> Response<ApiSuccess<T>>): ApiResult<T> = try {
-        val response = request()
-        if (response.isSuccessful) {
-            response.body()?.let { ApiResult.Success(it.data, it.meta) } ?: ApiResult.Failure(ApiFailure.MalformedResponse)
-        } else {
-            ApiResult.Failure(httpFailure(response))
+    /** For endpoints answering 204 No Content (e.g. logout). */
+    suspend fun <S : Any> callNoContent(service: KClass<S>, request: suspend S.() -> Response<Unit>): ApiResult<Unit> {
+        val api = service(service) ?: return ApiResult.Failure(ApiFailure.NotConfigured)
+        return guard {
+            val response = api.request()
+            if (response.isSuccessful) ApiResult.Success(Unit, null) else ApiResult.Failure(httpFailure(response))
         }
+    }
+
+    /** Blocking variant for OkHttp callback threads (token refresh inside an Authenticator). */
+    fun <S : Any, T> callBlocking(service: KClass<S>, request: S.() -> Call<ApiSuccess<T>>): ApiResult<T> {
+        val api = service(service) ?: return ApiResult.Failure(ApiFailure.NotConfigured)
+        return guard { envelope(api.request().execute()) }
+    }
+
+    private fun <S : Any> service(type: KClass<S>): S? {
+        val client = retrofit ?: return null
+        @Suppress("UNCHECKED_CAST")
+        return services.getOrPut(type) { client.create(type.java) } as S
+    }
+
+    private fun <T> envelope(response: Response<ApiSuccess<T>>): ApiResult<T> = if (response.isSuccessful) {
+        response.body()?.let { ApiResult.Success(it.data, it.meta) } ?: ApiResult.Failure(ApiFailure.MalformedResponse)
+    } else {
+        ApiResult.Failure(httpFailure(response))
+    }
+
+    private inline fun <T> guard(block: () -> ApiResult<T>): ApiResult<T> = try {
+        block()
     } catch (e: CancellationException) {
         throw e
     } catch (_: InterruptedIOException) {
@@ -68,14 +89,17 @@ class ApiClient @Inject constructor(
 
     private fun httpFailure(response: Response<*>): ApiFailure.Http {
         val body = runCatching { response.errorBody()?.string() }.getOrNull()
-        val envelope = body?.let { runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull() }
+        val error = body?.let { runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull() }
+        val retryAfterSeconds = error?.error?.details?.retryAfterSeconds
         return ApiFailure.Http(
             status = response.code(),
             kind = HttpFailureKind.of(response.code()),
-            code = envelope?.error?.code,
-            fields = envelope?.error?.fields.orEmpty(),
-            requestId = envelope?.meta?.requestId ?: response.headers()[HEADER_REQUEST_ID],
-            retryAfterMillis = parseRetryAfter(response.headers()["Retry-After"], clock.instant()),
+            code = error?.error?.code,
+            fields = error?.error?.fields.orEmpty(),
+            details = error?.error?.details,
+            requestId = error?.meta?.requestId ?: response.headers()[HEADER_REQUEST_ID],
+            retryAfterMillis = parseRetryAfter(response.headers()["Retry-After"], clock.instant())
+                ?: retryAfterSeconds?.takeIf { it >= 0 }?.times(1_000),
         )
     }
 

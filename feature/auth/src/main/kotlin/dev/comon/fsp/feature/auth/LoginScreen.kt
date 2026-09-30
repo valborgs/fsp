@@ -33,13 +33,19 @@ import dev.comon.fsp.domain.LoginFailure
 
 /** Navigation entry: obtains the entry-scoped ViewModel and forwards effects as navigation callbacks. */
 @Composable
-fun LoginEntry(onOpenOfflineMode: () -> Unit, viewModel: LoginViewModel = hiltViewModel()) {
+fun LoginEntry(
+    onOpenOfflineMode: () -> Unit,
+    onSignedIn: () -> Unit,
+    viewModel: LoginViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val openOffline by rememberUpdatedState(onOpenOfflineMode)
+    val signedIn by rememberUpdatedState(onSignedIn)
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
                 LoginEffect.OpenOfflineMode -> openOffline()
+                LoginEffect.SignedIn -> signedIn()
             }
         }
     }
@@ -73,7 +79,7 @@ fun LoginScreen(state: LoginUiState, onIntent: (LoginIntent) -> Unit, modifier: 
                     onClick = { onIntent(LoginIntent.Submit) },
                     enabled = state.canSubmit, modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (state.submitting) "로그인 중…" else "로그인") }
-                state.failure?.let { Text(it.message(), color = MaterialTheme.colorScheme.error) }
+                state.failure?.let { Text(it.message(state.retryAfterSeconds), color = MaterialTheme.colorScheme.error) }
                 OutlinedButton(
                     onClick = { onIntent(LoginIntent.EnterOfflineMode) },
                     enabled = !state.submitting, modifier = Modifier.fillMaxWidth(),
@@ -87,10 +93,16 @@ fun LoginScreen(state: LoginUiState, onIntent: (LoginIntent) -> Unit, modifier: 
     }
 }
 
-internal fun LoginFailure.message(): String = when (this) {
+internal fun LoginFailure.message(retryAfterSeconds: Long? = null): String = when (this) {
     LoginFailure.SERVER_NOT_CONFIGURED -> "서버 연결이 아직 설정되지 않았습니다. 로그인은 서버 연동 단계에서 제공됩니다."
     LoginFailure.INVALID_CREDENTIALS -> "아이디 또는 비밀번호를 확인해 주세요."
+    LoginFailure.ACTIVE_DEVICE_EXISTS -> "이 계정은 다른 기기에 연결되어 있습니다. 관리자에게 기기 연결 해제를 요청해 주세요."
+    LoginFailure.DEVICE_REVOKED -> "이 기기는 사용이 해제되었습니다. 관리자에게 문의해 주세요."
+    LoginFailure.RATE_LIMITED -> retryAfterSeconds?.let { "로그인 시도가 많습니다. ${it}초 후 다시 시도해 주세요." }
+        ?: "로그인 시도가 많습니다. 잠시 후 다시 시도해 주세요."
     LoginFailure.NETWORK -> "서버에 연결하지 못했습니다. 네트워크 상태를 확인한 후 다시 시도해 주세요."
+    LoginFailure.SERVER_ERROR -> "서버에서 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
+    LoginFailure.STORAGE -> "기기에 로그인 정보를 저장하지 못했습니다. 저장 공간을 확인한 후 다시 시도해 주세요."
 }
 
 @Preview(showBackground = true)

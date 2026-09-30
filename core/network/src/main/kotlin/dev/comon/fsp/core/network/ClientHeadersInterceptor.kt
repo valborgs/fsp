@@ -1,10 +1,11 @@
 package dev.comon.fsp.core.network
 
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.util.UUID
 
-/** Stable per-installation identifier; a reinstall yields a new one. */
+/** Stable per-installation identifier (UUID v4); a reinstall yields a new one. */
 fun interface DeviceIdProvider {
     fun deviceId(): String
 }
@@ -14,34 +15,47 @@ fun interface AccessTokenProvider {
     fun accessToken(): String?
 }
 
+/** Paths with special authentication handling (v1.4 §4.1, §6). */
+object AuthPaths {
+    private const val LOGIN = "auth/login"
+    private const val REFRESH = "auth/refresh"
+    private const val LOGOUT = "auth/logout"
+
+    /** login and refresh never carry `Authorization`. */
+    fun isPublic(url: HttpUrl): Boolean = url.endsWith(LOGIN) || url.endsWith(REFRESH)
+
+    /**
+     * No automatic refresh-and-retry: login/refresh failures are final, and a retried logout would
+     * send a refresh token that the refresh itself just rotated away.
+     */
+    fun skipsRefresh(url: HttpUrl): Boolean = isPublic(url) || url.endsWith(LOGOUT)
+
+    private fun HttpUrl.endsWith(path: String) = encodedPath.trimEnd('/').endsWith("/$path")
+}
+
 /**
- * Adds the tracing headers every request carries and the bearer token for authenticated endpoints.
- * Public endpoints opt out with [NO_AUTH]; the marker never leaves the device.
+ * Adds the headers every request carries (`X-Request-ID` new per request, `X-Device-ID`,
+ * `X-App-Version`) and the bearer token for every endpoint except login and refresh.
  */
 class ClientHeadersInterceptor(
     private val deviceIdProvider: DeviceIdProvider,
     private val accessTokenProvider: AccessTokenProvider,
     private val appVersion: String,
-    private val requestIdFactory: () -> String = { UUID.randomUUID().toString() },
+    private val requestIdFactory: () -> String = ::newRequestId,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val public = original.header(NO_AUTH_HEADER) != null
         val builder = original.newBuilder()
-            .removeHeader(NO_AUTH_HEADER)
             .header(ApiClient.HEADER_REQUEST_ID, requestIdFactory())
             .header("X-Device-ID", deviceIdProvider.deviceId())
             .header("X-App-Version", appVersion)
-        if (!public) {
+        if (!AuthPaths.isPublic(original.url)) {
             accessTokenProvider.accessToken()?.let { builder.header("Authorization", "Bearer $it") }
         }
         return chain.proceed(builder.build())
     }
 
     companion object {
-        private const val NO_AUTH_HEADER = "X-Fsp-No-Auth"
-
-        /** Use as `@Headers(ClientHeadersInterceptor.NO_AUTH)` on endpoints that must not send a token. */
-        const val NO_AUTH = "$NO_AUTH_HEADER: true"
+        fun newRequestId(): String = UUID.randomUUID().toString()
     }
 }

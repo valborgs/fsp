@@ -1,8 +1,9 @@
 package dev.comon.fsp.core.network
 
 import dev.comon.fsp.core.network.auth.LoginRequest
-import dev.comon.fsp.core.network.auth.LoginResponse
-import dev.comon.fsp.core.network.auth.UserDto
+import dev.comon.fsp.core.network.auth.LogoutRequest
+import dev.comon.fsp.core.network.auth.RefreshRequest
+import dev.comon.fsp.core.network.auth.TokenPairDto
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -28,9 +29,18 @@ class NetworkConfigTest {
         NetworkConfig.parse("not a url", "1.0")
     }
 
+    @Test fun appVersionMustBeValidHeaderValue() {
+        NetworkConfig.parse("", "1.0.0-rc.1+build.7")
+        listOf("", "1.0 beta", "버전1", "v".repeat(33)).forEach {
+            assertFalse(it, runCatching { NetworkConfig.parse("", it) }.isSuccess)
+        }
+    }
+
     @Test fun credentialsAreMaskedInDebugStrings() {
         assertFalse(LoginRequest("worker001", "Secret!1234ab", "d").toString().contains("Secret"))
-        val response = LoginResponse("at-secret", 900, "rt-secret", UserDto("u", "worker001", "n", 3, "INTERVIEWER", true), 1)
-        assertFalse(response.toString().contains("secret"))
+        assertFalse(RefreshRequest("secret-refresh", "d").toString().contains("secret"))
+        assertFalse(LogoutRequest("secret-refresh").toString().contains("secret"))
+        val tokens = TokenPairDto("Bearer", "at-secret", 900, "t", "rt-secret", 1, "t", "s", 1)
+        assertFalse(tokens.toString().contains("secret"))
     }
 }

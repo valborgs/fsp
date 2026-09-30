@@ -1,11 +1,17 @@
 # 현장 설문 Android 앱
 
-Compose 기반 앱. 기획서 v1.3에 따라 단계별 개발 중입니다.
+Compose 기반 앱. 제품 요구사항은 기획서 v1.3, 서버 API 계약은 [백엔드 API 명세 v1.4](docs/fsp_api_spec_v1_4.md)를 따릅니다.
 전체 진행표와 다음 작업은 [개발 계획](docs/DEVELOPMENT_PLAN.md)을 참고하세요.
 
 현재는 멀티모듈(app, core:domain/data/database/network/security/navigation, feature:auth/dashboard) 구조에서
-Hilt·Navigation 3·MVI·Room 3·Retrofit 3로 로그인 입력 화면과 오프라인 설문 없음 화면을 제공합니다.
-실제 인증·다운로드·설문 수집은 아직 구현하지 않았습니다. 로그인은 서버 미설정 실패를 표시합니다.
+Hilt·Navigation 3·MVI·Room 3·Retrofit 3로 다음을 제공합니다.
+
+- 로그인(API-01), 토큰 자동 갱신(API-02), 로그아웃(API-03)
+- 앱을 다시 켰을 때 세션 복원
+- 계정 홈 골격, 오프라인 설문 없음 화면
+
+설문 다운로드·출퇴근·설문 수집·관리 기능은 아직 구현하지 않았습니다.
+서버 주소가 없는 빌드에서는 로그인이 네트워크 호출 없이 "서버 미설정" 실패를 표시합니다.
 
 ## 빌드와 테스트
 

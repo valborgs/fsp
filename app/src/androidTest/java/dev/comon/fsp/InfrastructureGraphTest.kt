@@ -55,7 +55,8 @@ class InfrastructureGraphTest {
     @Test fun outboxPayloadIsEncryptedWithKeystore() {
         val operations = graph.outboxOperations()
         val row = operations.create("user-1", OutboxKind.ATTENDANCE_EVENT, "a1", """{"status":"ON"}""", now = 0)
-        assertFalse(row.payloadJson.contains("ON"))
+        // Quotes never occur in Base64, so this cannot match random ciphertext by chance.
+        assertFalse(row.payloadJson.contains("\"status\""))
         assertEquals("""{"status":"ON"}""", operations.payload(row))
     }
 }

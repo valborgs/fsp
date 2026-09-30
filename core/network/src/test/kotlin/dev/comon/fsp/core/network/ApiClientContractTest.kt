@@ -2,6 +2,8 @@ package dev.comon.fsp.core.network
 
 import dev.comon.fsp.core.network.auth.AuthApi
 import dev.comon.fsp.core.network.auth.LoginRequest
+import dev.comon.fsp.core.network.auth.LogoutRequest
+import dev.comon.fsp.core.network.auth.RefreshRequest
 import dev.comon.fsp.core.network.di.NetworkModule
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.Serializable
@@ -66,11 +68,17 @@ class ApiClientContractTest {
 
     private suspend fun probe() = client.call(ProbeApi::class) { probe() }
 
+    /** Spec v1.4 §14.1 example (tokens nested under `tokens`). */
     private val loginSuccess = """
-        {"data":{"accessToken":"at-1","expiresIn":900,"refreshToken":"rt-1","credentialVersion":2,
-          "user":{"userId":"u-1","id":"worker001","name":"홍길동","grade":3,"role":"INTERVIEWER","active":true,
-                  "resourceVersion":7}},
-         "meta":{"requestId":"req-1","serverTime":"2026-09-30T00:00:00Z"}}
+        {"data":{"tokens":{"tokenType":"Bearer","accessToken":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "expiresIn":900,"accessExpiresAt":"2026-09-30T00:20:10.000Z",
+            "refreshToken":"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB","refreshExpiresIn":2592000,
+            "refreshExpiresAt":"2026-10-30T00:05:10.000Z","sessionId":"00000000-0000-4000-8000-00000000000b",
+            "credentialVersion":1},
+          "user":{"userId":"00000000-0000-4000-8000-000000000001","id":"worker001","name":"홍길동","grade":3,
+                  "role":"INTERVIEWER","active":true,"resourceVersion":2},
+          "activeDeviceId":"00000000-0000-4000-8000-000000000003","deviceNextSequence":1},
+         "meta":{"requestId":"00000000-0000-4000-8000-000000000065","serverTime":"2026-09-30T00:05:10.000Z"}}
     """.trimIndent()
 
     @Test fun loginRequestAndResponseFollowContract() = runTest {
@@ -80,9 +88,12 @@ class ApiClientContractTest {
         val result = client.call(AuthApi::class) { login(LoginRequest("worker001", " Secret!1234ab ", "device-1")) }
 
         val success = result as ApiResult.Success
-        assertEquals("at-1", success.data.accessToken)
+        assertEquals("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", success.data.tokens.accessToken)
+        assertEquals("00000000-0000-4000-8000-00000000000b", success.data.tokens.sessionId)
         assertEquals(3, success.data.user.grade)
-        assertEquals("req-1", success.meta?.requestId)
+        assertEquals(2L, success.data.user.resourceVersion)
+        assertEquals(1L, success.data.deviceNextSequence)
+        assertEquals("00000000-0000-4000-8000-000000000065", success.meta?.requestId)
 
         val recorded = server.takeRequest()
         assertEquals("POST", recorded.method)
@@ -97,7 +108,31 @@ class ApiClientContractTest {
         assertEquals("device-1", recorded.headers["X-Device-ID"])
         assertEquals("1.0-test", recorded.headers["X-App-Version"])
         assertNull("login is public and must not send a token", recorded.headers["Authorization"])
-        assertNull("internal marker must not leave the device", recorded.headers["X-Fsp-No-Auth"])
+    }
+
+    @Test fun refreshIsPublicAndCarriesIdempotencyKey() {
+        token = "stale-token"
+        enqueue(200, """{"data":${tokenPairJson("new")}}""")
+        val result = client.callBlocking(AuthApi::class) {
+            refresh("11111111-1111-4111-8111-111111111111", RefreshRequest("r".repeat(43), "device-1"))
+        }
+        assertEquals("new".padEnd(43, 'A'), (result as ApiResult.Success).data.accessToken)
+        val recorded = server.takeRequest()
+        assertEquals("/api/v1/auth/refresh", recorded.url.encodedPath)
+        assertEquals("11111111-1111-4111-8111-111111111111", recorded.headers["Idempotency-Key"])
+        assertNull(recorded.headers["Authorization"])
+        val body = Json.parseToJsonElement(recorded.body!!.utf8()) as JsonObject
+        assertEquals(setOf("refreshToken", "deviceId"), body.keys)
+    }
+
+    @Test fun logoutIsAuthenticatedAndAcceptsNoContent() = runTest {
+        token = "at-1"
+        server.enqueue(MockResponse.Builder().code(204).build())
+        val result = client.callNoContent(AuthApi::class) { logout(LogoutRequest("r".repeat(43))) }
+        assertEquals(ApiResult.Success(Unit, null), result)
+        val recorded = server.takeRequest()
+        assertEquals("/api/v1/auth/logout", recorded.url.encodedPath)
+        assertEquals("Bearer at-1", recorded.headers["Authorization"])
     }
 
     @Test fun authenticatedRequestSendsBearerOnlyWhenSessionExists() = runTest {
@@ -123,14 +158,34 @@ class ApiClientContractTest {
         enqueue(
             422,
             """{"error":{"code":"VALIDATION_FAILED","message":"입력값을 확인해 주세요.","retryable":false,
-               "fields":[{"path":"answers[0].value","code":"REQUIRED"}]},"meta":{"requestId":"req-9"}}""",
+               "fields":[{"path":"answers[0].value","code":"REQUIRED","message":"필수 응답입니다."}],
+               "details":{"expectedSequence":null,"currentState":null,"currentVersion":7,"retryAfterSeconds":null,
+                          "serverTime":null,"conflictingFields":["answers"]}},
+               "meta":{"requestId":"req-9","serverTime":"2026-09-30T00:05:10.000Z"}}""",
         )
         val failure = (probe() as ApiResult.Failure).failure as ApiFailure.Http
         assertEquals(HttpFailureKind.UNPROCESSABLE, failure.kind)
         assertEquals("VALIDATION_FAILED", failure.code)
-        assertEquals(listOf(ApiFieldError("answers[0].value", "REQUIRED")), failure.fields)
+        assertEquals(listOf(ApiFieldError("answers[0].value", "REQUIRED", "필수 응답입니다.")), failure.fields)
+        assertEquals(7L, failure.details?.currentVersion)
+        assertEquals(listOf("answers"), failure.details?.conflictingFields)
         assertEquals("req-9", failure.requestId)
         assertFalse(failure.retryable)
+    }
+
+    @Test fun operationInProgressIsTheOnlyRetryableConflict() = runTest {
+        enqueue(409, """{"error":{"code":"OPERATION_IN_PROGRESS","message":"m","retryable":true}}""", "Retry-After" to "2")
+        enqueue(409, """{"error":{"code":"IDEMPOTENCY_CONFLICT","message":"m","retryable":false}}""")
+        val inProgress = (probe() as ApiResult.Failure).failure as ApiFailure.Http
+        val conflict = (probe() as ApiResult.Failure).failure as ApiFailure.Http
+        assertTrue(inProgress.retryable)
+        assertEquals(2_000L, inProgress.retryAfterMillis)
+        assertFalse(conflict.retryable)
+    }
+
+    @Test fun retryAfterFallsBackToDetails() = runTest {
+        enqueue(429, """{"error":{"code":"RATE_LIMITED","message":"m","retryable":true,"details":{"retryAfterSeconds":45}}}""")
+        assertEquals(45_000L, ((probe() as ApiResult.Failure).failure as ApiFailure.Http).retryAfterMillis)
     }
 
     @Test fun statusCodesMapToKindAndRetryability() = runTest {
@@ -139,6 +194,8 @@ class ApiClientContractTest {
             401 to (HttpFailureKind.UNAUTHORIZED to false),
             403 to (HttpFailureKind.FORBIDDEN to false),
             404 to (HttpFailureKind.NOT_FOUND to false),
+            405 to (HttpFailureKind.METHOD_NOT_ALLOWED to false),
+            415 to (HttpFailureKind.UNSUPPORTED_MEDIA_TYPE to false),
             408 to (HttpFailureKind.REQUEST_TIMEOUT to true),
             409 to (HttpFailureKind.CONFLICT to false),
             410 to (HttpFailureKind.RETENTION_EXPIRED to false),

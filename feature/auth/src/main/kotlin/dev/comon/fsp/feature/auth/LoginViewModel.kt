@@ -31,13 +31,14 @@ class LoginViewModel @Inject constructor(
         when (intent) {
             is LoginIntent.LoginIdChanged -> {
                 savedStateHandle[KEY_LOGIN_ID] = intent.value
-                _state.update { it.copy(loginId = intent.value, failure = null) }
+                _state.update { it.copy(loginId = intent.value, failure = null, retryAfterSeconds = null) }
             }
-            is LoginIntent.PasswordChanged -> _state.update { it.copy(password = intent.value, failure = null) }
+            is LoginIntent.PasswordChanged ->
+                _state.update { it.copy(password = intent.value, failure = null, retryAfterSeconds = null) }
             LoginIntent.Submit -> submit()
             LoginIntent.EnterOfflineMode -> {
                 // Offline mode performs no API call or authentication.
-                _state.update { it.copy(password = "", failure = null) }
+                _state.update { it.copy(password = "", failure = null, retryAfterSeconds = null) }
                 _effects.trySend(LoginEffect.OpenOfflineMode)
             }
         }
@@ -46,12 +47,16 @@ class LoginViewModel @Inject constructor(
     private fun submit() {
         val current = _state.value
         if (!current.canSubmit) return
-        _state.update { it.copy(submitting = true, failure = null) }
+        _state.update { it.copy(submitting = true, failure = null, retryAfterSeconds = null) }
         viewModelScope.launch {
             // Password is passed as typed: no trim or case change.
             when (val result = authRepository.login(current.loginId.trim(), current.password)) {
+                is LoginResult.Success -> {
+                    _state.update { it.copy(submitting = false, password = "") }
+                    _effects.send(LoginEffect.SignedIn)
+                }
                 is LoginResult.Failure -> _state.update {
-                    it.copy(submitting = false, password = "", failure = result.reason)
+                    it.copy(submitting = false, password = "", failure = result.reason, retryAfterSeconds = result.retryAfterSeconds)
                 }
             }
         }

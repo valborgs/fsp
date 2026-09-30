@@ -22,23 +22,48 @@ class AccessTokenHolder @Inject constructor() : AccessTokenProvider {
 }
 
 /**
- * Single place that stores and clears account credentials. Sign-in (stage 2) calls [store];
- * logout calls [clear], which drops both tokens but leaves the account's unsent records in place.
+ * Single place that stores and clears account credentials. Sign-in and every refresh call [store];
+ * logout and expiry call [clear], which drops the tokens but leaves the account's unsent records.
  */
 @Singleton
 class SessionCredentials @Inject constructor(
     private val accessTokens: AccessTokenHolder,
     private val refreshTokens: RefreshTokenStore,
+    private val refreshKeys: RefreshKeyStore,
 ) {
+    /** Account whose tokens are in use; set on sign-in and on restore at app start. */
+    @Volatile var currentUserId: String? = null
+        private set
+
+    /** Saves a new token pair. A rotated refresh token also ends the pending refresh attempt. */
     fun store(userId: String, accessToken: String, refreshToken: String) {
         refreshTokens.save(userId, refreshToken)
+        refreshKeys.clear()
         accessTokens.set(accessToken)
+        currentUserId = userId
     }
 
+    /** Re-attaches a stored session after process start. False when its refresh token is gone. */
+    fun activate(userId: String): Boolean {
+        if (refreshTokens.read(userId) == null) return false
+        currentUserId = userId
+        return true
+    }
+
+    fun accessToken(): String? = accessTokens.accessToken()
+
     fun refreshToken(userId: String): String? = refreshTokens.read(userId)
+
+    /**
+     * Idempotency-Key of the refresh in progress. Persisted so a retry after a lost response or a
+     * process restart reuses it and the server can return the same rotation result (v1.4 §7.1).
+     */
+    fun pendingRefreshKey(): String = refreshKeys.getOrCreate()
 
     fun clear() {
         accessTokens.clear()
         refreshTokens.clear()
+        refreshKeys.clear()
+        currentUserId = null
     }
 }

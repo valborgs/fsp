@@ -27,7 +27,7 @@ abstract class FspDatabase : RoomDatabase() {
     abstract fun outboxDao(): OutboxDao
 
     companion object {
-        const val VERSION = 1
+        const val VERSION = 2
         const val NAME = "fsp.db"
 
         /**
@@ -41,6 +41,7 @@ abstract class FspDatabase : RoomDatabase() {
         ): FspDatabase = Room.databaseBuilder(context, FspDatabase::class.java, name)
             .setDriver(driver)
             .setQueryCoroutineContext(Dispatchers.IO)
+            .addMigrations(*ALL_MIGRATIONS)
             .build()
     }
 }

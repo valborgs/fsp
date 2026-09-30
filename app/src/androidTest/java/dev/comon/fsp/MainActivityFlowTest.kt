@@ -19,8 +19,12 @@ import org.junit.runner.RunWith
 class MainActivityFlowTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
-    /** A headless emulator starts in non-touch mode, so the first field takes focus and raises the keyboard. */
-    @Before fun hideInitialKeyboard() {
+    /**
+     * Startup restores the session first; without one it opens the login screen. A headless emulator
+     * starts in non-touch mode, so the first field then takes focus and raises the keyboard.
+     */
+    @Before fun waitForLoginAndHideKeyboard() {
+        rule.awaitDisplayed("오프라인 모드")
         rule.waitForIdle()
         Espresso.closeSoftKeyboard()
     }

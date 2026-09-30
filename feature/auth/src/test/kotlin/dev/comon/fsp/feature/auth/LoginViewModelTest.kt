@@ -1,7 +1,9 @@
 package dev.comon.fsp.feature.auth
 
 import androidx.lifecycle.SavedStateHandle
+import dev.comon.fsp.domain.AccountSession
 import dev.comon.fsp.domain.AuthRepository
+import dev.comon.fsp.domain.Role
 import dev.comon.fsp.domain.LoginFailure
 import dev.comon.fsp.domain.LoginResult
 import kotlinx.coroutines.CompletableDeferred
@@ -22,13 +24,40 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LoginViewModelTest {
-    private class FakeAuthRepository(private val gate: CompletableDeferred<Unit>? = null) : AuthRepository {
+    private class FakeAuthRepository(
+        private val gate: CompletableDeferred<Unit>? = null,
+        private val result: LoginResult = LoginResult.Failure(LoginFailure.SERVER_NOT_CONFIGURED),
+    ) : AuthRepository {
         val calls = mutableListOf<Pair<String, String>>()
         override suspend fun login(loginId: String, password: String): LoginResult {
             calls += loginId to password
             gate?.await()
-            return LoginResult.Failure(LoginFailure.SERVER_NOT_CONFIGURED)
+            return result
         }
+    }
+
+    @Test fun successClearsPasswordAndSignsIn() = runTest {
+        val account = AccountSession("u-1", "worker001", "홍길동", Role.INTERVIEWER)
+        val vm = LoginViewModel(FakeAuthRepository(result = LoginResult.Success(account)), SavedStateHandle())
+        vm.type("worker001", "Example!1234A")
+        vm.onIntent(LoginIntent.Submit)
+        assertEquals(LoginEffect.SignedIn, vm.effects.first())
+        assertEquals("", vm.state.value.password)
+        assertFalse(vm.state.value.submitting)
+        assertNull(vm.state.value.failure)
+    }
+
+    @Test fun rateLimitKeepsWaitTimeForTheMessage() {
+        val vm = LoginViewModel(FakeAuthRepository(result = LoginResult.Failure(LoginFailure.RATE_LIMITED, 30)), SavedStateHandle())
+        vm.type("worker001", "Example!1234A")
+        vm.onIntent(LoginIntent.Submit)
+        assertEquals(LoginFailure.RATE_LIMITED, vm.state.value.failure)
+        assertEquals(30L, vm.state.value.retryAfterSeconds)
+        assertTrue(LoginFailure.RATE_LIMITED.message(30).contains("30초"))
+    }
+
+    @Test fun everyFailureHasAMessage() {
+        LoginFailure.entries.forEach { assertTrue(it.name, it.message().isNotBlank()) }
     }
 
     @Before fun setUp() = Dispatchers.setMain(UnconfinedTestDispatcher())

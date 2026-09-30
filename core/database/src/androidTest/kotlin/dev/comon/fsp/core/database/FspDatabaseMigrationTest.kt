@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
@@ -41,6 +42,25 @@ class FspDatabaseMigrationTest {
     @Test fun exportedV1SchemaMatchesEntities() = runTest {
         helper.createDatabase(1).close()
         helper.runMigrationsAndValidate(1, emptyList()).close()
+    }
+
+    @Test fun migration1To2KeepsSessionsAndAddsEmptyColumns() = runTest {
+        helper.createDatabase(1).apply {
+            execSQL(
+                "INSERT INTO local_session (sessionId, mode, userId, deviceId, roleGrade, createdAt) " +
+                    "VALUES ('s1', 'ACCOUNT', 'u-1', 'd-1', 3, 1)",
+            )
+        }.close()
+
+        helper.runMigrationsAndValidate(2, ALL_MIGRATIONS.toList()).apply {
+            prepare("SELECT userId, roleGrade, loginId, displayName, serverSessionId, deviceNextSequence, endedAt FROM local_session")
+                .use {
+                    assertTrue(it.step())
+                    assertEquals("u-1", it.getText(0))
+                    assertEquals(3L, it.getLong(1))
+                    (2..6).forEach { column -> assertTrue("column $column", it.isNull(column)) }
+                }
+        }.close()
     }
 
     @Test fun existingV1DataIsKeptWhenAppOpensDatabase() = runTest {

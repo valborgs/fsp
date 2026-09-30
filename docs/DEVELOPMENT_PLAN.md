@@ -1,7 +1,11 @@
 # 현장 설문 앱 개발 진행표
 
-기준: fsp_api_spec.docx (현장설문앱 기획서·API 명세 v1.3) 및 참조 대화의 확정 요구사항.
-최소 지원 버전은 2026-09-30 추가 요청에 따라 Android 8.0(API 26)으로 변경한다. 원본 기획서의 Android 6.0 조건보다 이 변경을 우선한다.
+기준 문서와 우선순위:
+
+1. **서버 API 계약은 [`docs/fsp_api_spec_v1_4.md`](fsp_api_spec_v1_4.md)(백엔드 API 명세 v1.4)를 따른다.** 실제 백엔드 서버의 API다. 이 문서나 v1.3과 다르면 v1.4가 우선한다(2026-09-30 지시).
+2. 제품 요구사항은 `fsp_api_spec.docx`(기획서·API 명세 v1.3)와 참조 대화의 확정 요구사항을 따른다.
+3. 최소 지원 버전은 Android 8.0(API 26)이다(2026-09-30 확정). v1.4 명세의 클라이언트 최소 버전 표기도 이 기준으로 맞췄다.
+
 서버는 별도 구현 범위다. 단계별로 구현과 검증을 완료하고 진행 기록을 갱신한다.
 
 ## 개발 단계
@@ -10,31 +14,38 @@
 | --- | --- | --- | --- |
 | 1A | 프로젝트 기반, 권한·시작 정책, 최초 진입 화면 | 핵심 정책 테스트, API 26 설정 빌드 | 완료 |
 | 1B | MVI, Hilt, Navigation 3, Room 3, Retrofit 3 통합 | DI 생성, 탐색 복원, DB 트랜잭션·마이그레이션, HTTP 계약 테스트 | 완료 (2026-09-30, 1B-1~1B-4) |
-| 2 | 로그인·계정·CSV·할당 관리 | 역할별 접근, CSV 원자적 등록, 할당 충돌 처리 | 다음 작업 |
-| 3 | 다운로드·오프라인 선택·반복 출퇴근 | 유효 캐시만 사용, 재실행 복원, 로컬/Outbox 원자적 저장 | 대기 |
-| 4 | 3종 문항·자동 저장·제출 | 단일 선택/주관식/7점 척도, 버전 고정, 종료 후 복원 | 대기 |
-| 5 | 선택 전송·현황·검수 | 멱등성, 추가 3회 재시도, 반려 revision, If-Match 충돌 | 대기 |
+| 2 | 로그인·세션·계정·CSV·할당 관리 (API-01~12, 14, 16~19) | 역할별 접근, refresh 회전·single-flight, CSV 원자적 등록, 할당 If-Match 412 처리 | 진행 중 (2-1 완료, 2-2 다음) |
+| 3 | 할당 확인·다운로드·오프라인 선택·반복 출퇴근 (API-13, 15, 20~23) | 유효 캐시만 사용, 설문 상태 PUBLISHED/SUSPENDED/CLOSED 반영, 재실행 복원, 근태 sequence·로컬/Outbox 원자적 저장 | 대기 |
+| 4 | 3종 문항·자동 저장·초안·제출 (API-26, 27) | 단일 선택/주관식/7점 척도, 버전·할당·`attendanceEventId` 고정, draftVersion, 종료 후 복원 | 대기 |
+| 5 | 선택 전송·현황·검수 (API-24, 25, 28~33) | 멱등성, 최초+추가 3회(10/20/40초·Retry-After), 반려 revision, If-Match 412, 익명 가져오기 항목별 결과 | 대기 |
 | 6 | 다중 화면·보안·장애 복구·현장 파일럿 | API 26/최신 OS, 태블릿/폴드, 만료·프로세스 종료 검증 | 대기 |
 
 ## 현재 구현 범위
 
-- `app`: Hilt Application, Navigation 3 루트 백스택(`FspNavigation`), 테마.
-- `core:navigation`: 직렬화 가능한 route 키(`LoginRoute`, `OfflineDashboardRoute`).
-- `core:database`: Room 3 `FspDatabase` v1(`local_session`, `survey_definition`, `outbox`), DAO, `LocalWriteTransaction`, Hilt 제공.
-- `core:network`: Retrofit 3/OkHttp 5 `ApiClient`, 공통 envelope·오류 매핑(`ApiResult`/`ApiFailure`), 공통 헤더 인터셉터, `AuthApi`(로그인 DTO), `NetworkConfig`(HTTPS 기본 주소).
+- `app`: Hilt Application, Navigation 3 루트 백스택(`FspNavigation`: 시작 → 로그인/계정 홈, 오프라인), 서버 주소 설정(`AppConfigModule`), 테마.
+- `core:navigation`: 직렬화 가능한 route 키(`StartupRoute`, `LoginRoute`, `AccountHomeRoute`, `OfflineDashboardRoute`).
+- `core:database`: Room 3 `FspDatabase` v2(`local_session`, `survey_definition`, `outbox`), 마이그레이션 1→2, DAO, `LocalWriteTransaction`, Hilt 제공.
+- `core:network`: Retrofit 3/OkHttp 5 `ApiClient`, v1.4 공통 envelope·오류 매핑(`ApiResult`/`ApiFailure`, `ApiError.details`), 공통 헤더 인터셉터, 401 refresh `TokenAuthenticator`, `AuthApi`(API-01~04), `NetworkConfig`(HTTPS 기본 주소·X-App-Version 검증).
 - `core:security`: Android Keystore AES-256-GCM `DataCipher`(`KeystoreDataCipher`), 암호화된 Refresh Token 저장소(`RefreshTokenStore`).
-- `core:data`: Repository 구현과 Hilt 바인딩. 설문 캐시는 Room(`RoomSurveyCacheRepository`), 로그인은 서버 미설정 구현, 설치 ID(`InstallationIdStore`), 메모리 Access Token(`AccessTokenHolder`)과 `SessionCredentials`, Outbox 페이로드 암호화(`OutboxOperations`).
-- `feature:auth`: 로그인 화면 MVI(State/Intent/Effect)와 `LoginViewModel`.
-- `feature:dashboard`: 계정 없는 모드 대시보드 MVI와 `OfflineDashboardViewModel`.
-- `core:domain`: Android에 의존하지 않는 역할·세션·할당·설문 시작 정책, Repository 인터페이스.
+- `core:data`: Repository 구현과 Hilt 바인딩.
+  - 로그인 `NetworkAuthRepository`, refresh `SessionTokenRefresher`, 세션 복원·로그아웃 `LocalSessionRepository`
+  - 설문 캐시 `RoomSurveyCacheRepository`, 설치 ID `InstallationIdStore`
+  - 토큰 `AccessTokenHolder`/`SessionCredentials`/`RefreshKeyStore`, Outbox 페이로드 암호화 `OutboxOperations`
+- `feature:auth`: 로그인 화면 MVI와 `LoginViewModel`, 시작 화면(`StartupViewModel`: 저장된 세션 복원).
+- `feature:dashboard`: 계정 없는 모드 대시보드(`OfflineDashboardViewModel`), 계정 홈 골격(`AccountHomeViewModel`: 이름·역할 표시, 로그아웃).
+- `core:domain`: Android에 의존하지 않는 역할·세션·할당·설문 시작 정책, 계정 입력 규칙(`CredentialRules`), Repository 인터페이스.
 - 계정 등급 1/2/3, 관리자 실제 수집 금지, 출근 조건, 인증 후 다운로드 정책.
 - 로그인 계정은 본인 할당 캐시만 사용. 익명 모드는 유효 캐시를 선택.
 - 온라인 신규 시작은 최종 할당 확인 필수. 실패 시 오래된 할당으로 시작 불가.
 - 신규 응답 시작 시 설문·할당을 값으로 고정. 이후 할당 변경은 다음 시작에 적용.
 - 익명 응답 가져오기는 조사원의 현재 할당 설문·버전 일치 여부 확인.
 
-아직 실제 로그인, 다운로드, 출퇴근, 설문 입력은 제공하지 않는다. DB는 생성되지만 업무 데이터를 쓰는 기능은 없다.
-로그인은 `UnconfiguredAuthRepository`가 네트워크 호출 없이 `SERVER_NOT_CONFIGURED` 실패를 반환한다(가짜 성공 없음).
+- **로그인·세션**
+  - 로그인(API-01), 토큰 갱신(API-02), 로그아웃(API-03)이 구현되어 있다.
+  - 서버 주소(`fsp.apiBaseUrl`)가 없는 빌드는 네트워크 호출 없이 “서버 미설정” 실패를 표시한다(가짜 성공 없음).
+  - 실서버 연동은 아직 검증하지 않았다.
+- **미구현**: 다운로드, 출퇴근, 설문 입력, 계정·할당 관리 화면은 아직 없다. 계정 홈은 이름·역할 표시와 로그아웃만 있다.
+- **DB에 기록되는 것**: 로그인 세션(`local_session`)만 기록된다. 업무 데이터를 쓰는 기능은 아직 없다.
 오프라인 진입은 Room `survey_definition`을 조회한다. 다운로드 기능이 없어 테이블이 비어 있으므로 설문 없음 화면을 표시한다. 샘플 설문은 내장하지 않는다.
 화면은 스크롤·키보드 여백·최대 본문 너비를 적용한 기본형이며 폴더블 힌지 대응은 6단계다.
 정책 단위 테스트는 실제 DB에 저장된 응답의 프로세스 종료 복원을 검증하지 않는다.
@@ -66,22 +77,50 @@ Navigation 3 1.2.0 + Room 3.0.3 + Hilt 2.60.1 + Kotlin 2.2.10 조합은 1B-2에�
 - 달력 기준 Asia/Seoul 3개월. 미전송·결과 미확인·진행 중 응답 자동 삭제 금지.
 - 모든 슈퍼바이저는 전체 조사원 관리. 팀 모델 추가 금지.
 
+v1.4 API 계약에서 이후 단계가 반드시 지킬 항목:
+
+- **요청 본문**: DTO 표에 있는 키만 보낸다(알 수 없는 필드는 422). nullable 필드는 빈 문자열이 아니라 null로 보낸다. 응답의 알 수 없는 필드는 무시한다(`ignoreUnknownKeys`).
+- **공통 헤더와 형식**
+  - 헤더: `X-Device-ID`(설치 UUID v4, 본문 deviceId와 같아야 함), `X-App-Version`(`[A-Za-z0-9._+-]{1,32}`), `X-Request-ID`(요청마다 새 UUID v4).
+  - 시각은 UTC `YYYY-MM-DDTHH:mm:ss(.SSS)Z`이다. 오프셋 형식은 거절된다.
+  - UUID는 소문자 canonical 형식이다.
+- **`Idempotency-Key`**(UUID v4) 필수 API
+  - API-02(refresh), 06, 07, 08, 09, 10, 11, 18, 21, 27, 30, 31
+  - 재전송할 때는 같은 키와 같은 본문을 쓴다. 본문이 바뀌면 새 키를 쓴다.
+- **If-Match**
+  - 강한 ETag `"7"` 형식이다. 누락은 428, 형식 오류는 400, 불일치는 412(`details.currentVersion`)다.
+  - 412가 나면 최신 상태를 다시 조회해 보여 주고, 자동으로 덮어쓰지 않는다.
+- **인증**
+  - login·refresh를 뺀 모든 API는 Bearer 토큰이 필요하다.
+  - 401은 요청당 refresh 1회 후 원래 요청을 1회만 재개한다.
+  - refresh는 single-flight로 수행하고 Idempotency-Key를 영속 저장한다. `TOKEN_REUSE_DETECTED`, `INVALID_REFRESH_TOKEN`, `DEVICE_REVOKED`, `ACCOUNT_DISABLED`면 세션을 종료한다.
+- **재시도**
+  - 연결 오류, 타임아웃, 408, 429, 5xx, `409 OPERATION_IN_PROGRESS`는 최초 + 추가 최대 3회 재시도한다. 간격은 최소 10/20/40초이고, Retry-After가 더 길면 그 값을 쓴다.
+  - 403은 BLOCKED로 두고 자동 반복하지 않는다. 그 밖의 4xx는 실패로 표시하고 내용을 자동 수정하거나 삭제하지 않는다.
+- **근태**
+  - sequence는 (userId, deviceId)마다 따로 관리한다. 초기값은 로그인과 `/me`의 `deviceNextSequence`이고, `local_session.deviceNextSequence`에 저장되어 있다.
+  - `EVENT_GAP`·`SEQUENCE_CONFLICT`·`ATTENDANCE_STATE_CONFLICT`가 나면 자동으로 삭제하거나 바꿔치기하지 않는다.
+- **응답**
+  - 새 응답은 로컬 ON 이벤트의 `attendanceEventId`와 함께 생성한다. OFF 상태에서는 응답 ID를 만들지 않는다.
+  - 초안 `draftVersion`은 단조 증가한다. 서버 초안이 없어도 전체 답변으로 제출할 수 있다.
+- **설문 운영 상태**: SUSPENDED·CLOSED 설문으로는 새로 시작하지 않는다. CLOSED 설문은 서버에 새로 저장하거나 제출할 수 없다(409 `SURVEY_CLOSED`).
+
 ## 외부 연동 준비 사항
 
 실서버 연동 시 HTTPS API 기본 주소와 역할별 테스트 계정이 필요하다.
 기본 주소는 Gradle 속성 `fsp.apiBaseUrl`(예: `-Pfsp.apiBaseUrl=https://host/api/v1`)로 주입하며 HTTPS가 아니면 빌드가 실패한다.
-기획서에 `User.resourceVersion`의 JSON 타입(정수/문자열)이 명시되지 않아 DTO에서 제외했다. 서버와 확정이 필요하다.
+`User.resourceVersion`의 JSON 타입과 refresh 응답 형식은 v1.4에서 확정되었다(정수, `TokenPair`). 2-1에서 반영했다.
 주소·계정이 없어도 1B의 로컬 DB 및 HTTP 계약 테스트는 진행할 수 있다.
 API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실기기 모델 목록은 아직 확보하지 않았다.
 
 ## 1A 검증 결과 (2026-09-30)
 
-아래는 최초 API 23 설정 당시의 검증 이력이다. 현재 지원 기준과 재검증 결과는 다음 절을 따른다.
+아래는 최소 지원 버전을 확정하기 전의 초기 검증 이력이다. 현재 지원 기준(API 26)의 재검증 결과는 다음 절을 따른다.
 
 - `:core:domain:test`: 10개 통과, 실패 0개.
-- `:app:assembleDebug`: 성공. APK의 minSdkVersionForDexing=23 확인.
+- `:app:assembleDebug`: 성공.
 - `:app:lintDebug`: 오류 0개, 경고 18개. 경고는 후속 통합 시 정리 대상.
-- API 26 adaptive icon을 `mipmap-anydpi-v26`로 분리해 API 23 리소스 링크 오류 해결.
+- adaptive icon을 `mipmap-anydpi-v26`로 분리했다. minSdk 26에서는 불필요한 분리라 Lint `ObsoleteSdkInt` 경고 대상이다.
 - 빌드는 기존 Android Studio JDK와 사용자 Gradle 캐시로 실행.
 - 실기기/에뮬레이터 실행, 화면 시각 검증, DB 영속화, 서버 통신은 아직 검증하지 않음.
 
@@ -234,8 +273,10 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
   - 요청마다 새 UUID `X-Request-ID`를 붙이고, `X-Device-ID`와 `X-App-Version`도 붙인다.
   - `Authorization: Bearer`는 토큰이 있을 때만 붙인다.
   - 공개 API는 `@Headers(ClientHeadersInterceptor.NO_AUTH)`로 토큰 전송을 막는다. 내부 표시 헤더는 서버로 나가지 않는다.
+  - (2-1에서 변경: v1.4에 맞춰 login·refresh 경로 기준 `AuthPaths`로 바꾸고 `NO_AUTH` 표시는 삭제했다.)
 - OkHttp 설정: 연결 15초, 읽기 30초, 쓰기 30초, 전체 60초. `retryOnConnectionFailure(false)`로 재시도는 Outbox 정책에만 맡긴다. HTTP 로깅은 넣지 않았다(비밀번호·토큰 보호).
 - `AuthApi.login`(`POST auth/login`, 공개)과 DTO `LoginRequest{id, pw, deviceId}`, `LoginResponse`, `UserDto`를 추가했다. `toString`은 비밀번호와 토큰을 마스킹한다.
+  - (2-1에서 변경: v1.4 형식에 맞춰 `LoginResultDto{tokens, user, activeDeviceId, deviceNextSequence}`와 `TokenPairDto`로 교체했다.)
 - 설정: `fsp.apiBaseUrl` Gradle 속성을 `BuildConfig.API_BASE_URL`로 넘기고, `AppConfigModule`이 `NetworkConfig`를 제공한다.
   - HTTPS가 아닌 주소는 Gradle 설정 단계와 `NetworkConfig.parse` 양쪽에서 거부한다.
   - 매니페스트에 `usesCleartextTraffic="false"`를 적용했다.
@@ -254,7 +295,9 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
 ### 설계 결정
 
 - **재시도 판단 기준**: 재시도 가능 여부는 HTTP 상태로 판단하고, 서버 본문의 `retryable`은 참고하지 않는다. 기획서 6장이 “타임아웃·연결 실패·408·429·5xx”로 정했기 때문이다. 재시도 횟수(최초 + 추가 3회)와 간격은 5단계 Outbox Worker에서 구현한다.
+  - (2-1에서 변경: v1.4 §11.3에 따라 `409 OPERATION_IN_PROGRESS`도 재시도 가능으로 분류한다.)
 - **`resourceVersion` 제외**: `UserDto.resourceVersion`은 기획서에 JSON 타입이 없어 제외했다. `ignoreUnknownKeys`이므로 서버가 보내도 파싱에는 영향이 없다.
+  - (2-1에서 변경: v1.4에서 정수로 확정되어 추가했다.)
 - **Hilt 검증 방식**: Dagger `fullBindingGraphValidation` 옵션을 시험했지만 쓰지 않았다.
   - KSP와 `hiltJavaCompile` 양쪽에 넣어 봐도 쓰이지 않는 모듈의 누락 바인딩을 보고하지 않았다(음성 시험으로 확인).
   - 그래서 `@EntryPoint` 방식을 채택했다.
@@ -366,39 +409,156 @@ API 26은 에뮬레이터(`Fsp_API26`)로 확인했다. 현장 파일럿용 실�
 - **응답 JSON 암호화**: 응답 JSON 암호화는 응답 테이블을 추가하는 4단계에서 `DataCipher`로 적용해야 한다.
 - **작업 영역 연결**: `local_session`에 현재 작업 영역을 실제로 기록하고 복원하는 흐름은 2단계(계정)와 3단계(익명 출퇴근)에서 연결한다.
 
-## 다음 단계: 2단계 시작 작업 (로그인·계정·CSV·할당 관리)
+## 2단계 하위 단계
 
-2단계도 하위 단계로 나눠 진행한다. 서버가 없어도 할 수 있는 작업을 앞에 둔다.
+| 하위 단계 | 범위 (v1.4 API) | 완료 기준 | 상태 |
+| --- | --- | --- | --- |
+| 2-1 | 로그인·refresh·로그아웃·세션 복원 (API-01~03, `/me` DTO) | 계약 테스트, refresh 1회·single-flight, 세션 만료 처리, DB v2 마이그레이션 | 완료 (2026-09-30) |
+| 2-2 | 계정 입력 검증과 CSV 로컬 사전 검증 | RFC 4180·BOM·경계값, 서버 `CsvError` 코드와 같은 행 오류 | 다음 작업 |
+| 2-3 | 어드민 계정·CSV·기기 관리 (API-05~12) | Idempotency-Key 재전송, If-Match 412/428, IMPORT_INVALID/EXPIRED | 대기 |
+| 2-4 | 슈퍼바이저·어드민 할당 관리 (API-14, 16~19) | slotVersion If-Match, 동시 변경 412 후 재조회, no-op·해제 | 대기 |
 
-1. **2-1 로그인·세션**
-   - `LoginResult.Success`(세션·역할)를 추가하고, `ApiClient`와 `AuthApi`를 쓰는 `NetworkAuthRepository`를 만든다.
-   - `ApiFailure`를 `LoginFailure`로 매핑한다.
-     - 401 → 자격 증명 오류. 계정 존재 여부는 노출하지 않는다.
-     - 409 `ACTIVE_DEVICE_EXISTS`
-     - 403
-     - 네트워크 오류, 서버 미설정
-   - 성공하면 `SessionCredentials.store`로 토큰을 저장하고 `local_session`에 ACCOUNT 행을 기록한다.
-   - 401이 오면 토큰 갱신을 1회 시도한다(`/auth/refresh`, Refresh Token 회전).
-   - 로그아웃은 `/auth/logout`을 호출하고 `SessionCredentials.clear`를 실행한다. 백스택에서는 인증 이후 엔트리를 제거한다.
-   - 역할별 첫 화면 route를 둔다. 조사원 대시보드와 관리 대시보드는 골격만 만든다.
-   - MockWebServer 계약 테스트와 ViewModel 테스트를 작성한다.
-2. **2-2 계정 입력 검증과 CSV 파서**(서버 없이 가능)
-   - 아이디(영문·숫자 4~30자, 대소문자 구분 없이 유일), 이름, 비밀번호(12~64자, 3종 포함, trim 금지) 검증을 만든다.
-   - RFC 4180 CSV 파서: UTF-8/BOM, 따옴표·이스케이프, 헤더 `id,pw,name,grade`, 최대 1,000행·1 MiB, grade 1 거부, 파일 안 중복 검출.
-   - 행 오류는 헤더를 1행으로 센 행 번호와 필드, 코드로 보고하고 비밀번호는 표시하지 않는다.
-3. **2-3 어드민 계정 관리 화면과 API**
-   - `/users`, `/user-imports/validate`, `/user-imports/{importId}/commit`(Idempotency-Key)을 연결한다.
-   - If-Match 412/428을 처리한다.
-4. **2-4 슈퍼바이저·어드민 할당 관리 화면과 API**
-   - `/interviewers`, `/interviewers/{userId}/survey-assignment`(GET/PUT, If-Match slotVersion, Idempotency-Key), 이력 API를 연결한다.
-   - 412 충돌이 나면 최신 할당을 다시 보여 주고 자동으로 덮어쓰지 않는다.
+## 2-1 완료 기록 (2026-09-30)
 
-필요한 외부 정보:
-- HTTPS API 기본 주소와 역할별(1/2/3) 테스트 계정
-- `User.resourceVersion`의 JSON 타입
-- `/auth/refresh` 응답 형식의 세부 사항
+v1.4 명세를 받은 뒤 진행했다. 기존 1B 네트워크 계약 중 v1.4와 다른 부분도 이번에 함께 고쳤다.
 
-이 정보가 없으면 2-1·2-3·2-4는 MockWebServer 계약 테스트까지만 진행하고, 실서버 연동은 미검증으로 남긴다.
+### 구현 범위
+
+- **네트워크 계약(v1.4)**
+  - 오류 본문
+    - `ApiError`에 `details`(`expectedSequence`, `currentState`, `currentVersion`, `retryAfterSeconds`, `serverTime`, `conflictingFields`)를 추가했다.
+    - `FieldError`에 `message`를 추가했다.
+    - `Retry-After` 헤더가 없으면 `details.retryAfterSeconds`를 쓴다.
+  - 재시도 분류: `409 OPERATION_IN_PROGRESS`를 재시도 가능으로 분류하고, 405(`METHOD_NOT_ALLOWED`)와 415(`UNSUPPORTED_MEDIA_TYPE`) 분류를 추가했다.
+  - 인증 헤더: 공개 API는 경로로 판단한다(`AuthPaths`: login·refresh는 Bearer 없음, logout은 Bearer 필요). 이전 `NO_AUTH` 표시 헤더는 삭제했다.
+  - DTO: `AuthApi`에 login·refresh(blocking `Call`, `Idempotency-Key` 헤더)·logout(204)·me를 정의했다. `LoginResultDto`, `TokenPairDto`, `UserDto`(`resourceVersion` 정수), `MeResultDto`, `RefreshRequest`, `LogoutRequest`를 추가했다. 토큰과 비밀번호는 `toString`에서 마스킹한다.
+  - `ApiClient`에 `callNoContent`(204)와 `callBlocking`(Authenticator용)을 추가했다.
+  - `NetworkConfig`는 앱 버전이 `X-App-Version` 규칙을 지키는지 검사한다.
+  - `TokenAuthenticator`(OkHttp Authenticator)
+    - 401이 오면 `TokenRefresher`로 1회 갱신한 뒤, 새 `X-Request-ID`로 원래 요청을 1회만 재개한다.
+    - 두 번째 401과 login·refresh·logout 경로에는 갱신하지 않는다.
+    - refresh 자체는 Authenticator가 없는 `@Named(AUTH_CLIENT)` 클라이언트로 호출한다.
+- **로그인(`NetworkAuthRepository`)**
+  - 입력 사전 검증: `CredentialRules`(아이디 `^[A-Za-z0-9]{4,30}$`, 비밀번호 ASCII 12~64자·영문/숫자/구두점 포함, trim 없음)에 맞지 않으면 요청 없이 `INVALID_CREDENTIALS`를 반환한다.
+  - 성공 처리
+    - `grade`와 `role`이 일치하는지, 그리고 `tokenType=Bearer`인지 검사한다.
+    - 토큰은 `SessionCredentials.store`로 저장한다. Refresh Token은 암호화해 저장하고 Access Token은 메모리에만 둔다.
+    - 트랜잭션 안에서 이전 세션을 종료하고 ACCOUNT 세션 행을 연다. 이 행에는 loginId(소문자), 이름, serverSessionId, deviceNextSequence가 들어간다.
+    - 저장에 실패하면 토큰을 지우고 `STORAGE`를 반환한다.
+  - 실패 매핑(v1.4 §13): 오류 코드 `ACTIVE_DEVICE_EXISTS`와 `DEVICE_REVOKED`를 먼저 보고, 그다음 HTTP 상태를 본다.
+
+    | 응답 | 처리 |
+    | --- | --- |
+    | 429 | `RATE_LIMITED`(대기 초 포함) |
+    | 401·422 | `INVALID_CREDENTIALS`(계정 존재 여부 비노출) |
+    | 5xx·계약 외 응답 | `SERVER_ERROR` |
+    | 네트워크 오류 | `NETWORK` |
+    | 주소 미설정 | `SERVER_NOT_CONFIGURED` |
+- **refresh(`SessionTokenRefresher`)**
+  - 모니터 락으로 single-flight 처리한다. 이미 다른 스레드가 토큰을 교체했으면 새 요청 없이 그 토큰을 반환한다.
+  - `Idempotency-Key`는 `no_backup/session/refresh-idempotency-key`에 영속 저장한다. 일시 실패나 재시작 뒤에도 같은 키를 쓰고, 새 토큰 쌍을 저장하거나 세션이 끝나면 지운다.
+  - 거절(400·401·403·409·422 중 재시도 불가 응답)이면 토큰을 지우고 `local_session`을 종료한다. 일시 실패(네트워크·408·429·5xx·`OPERATION_IN_PROGRESS`)면 세션과 키를 유지한다.
+- **세션(`LocalSessionRepository`)**
+  - 복원: 열린 ACCOUNT 행과 저장된 Refresh Token이 있어야 복원한다. 토큰이 없으면 세션을 종료한다.
+  - 관찰: `observeCurrentAccount`로 현재 계정을 관찰한다.
+  - 로그아웃
+    - Access Token이 없으면(재시작 직후) 먼저 refresh한다. 회전된 토큰으로 API-03을 호출한다.
+    - 서버 결과와 상관없이 로컬 토큰을 지우고 세션을 종료한다. 미전송 기록은 보존한다.
+- **DB v2**
+  - `local_session`에 `loginId`, `displayName`, `serverSessionId`, `deviceNextSequence`, `endedAt`(모두 nullable)을 추가했다.
+  - `MIGRATION_1_2`는 `ALTER TABLE ADD COLUMN`만 한다. `2.json`을 내보냈고 `1.json`은 수정하지 않았다.
+  - DAO에 `current`, `observeCurrent`, `endOpenSessions`를 추가했다.
+- **화면·탐색**
+  - 시작 화면(`StartupRoute`/`StartupViewModel`): 기기 안의 세션만 복원한다(네트워크 대기 없음). 실패하면 로그인 화면으로 간다.
+  - 로그인에 성공하면 백스택 전체를 `[AccountHomeRoute]`로 교체한다(`resetTo`). 따라서 뒤로 가기로 로그인 화면에 돌아가지 않는다.
+  - 계정 홈 골격: 이름, 아이디, 역할, 역할별 “다음 단계 제공 예정” 안내, 로그아웃이 있다. 세션이 사라지면(로그아웃, refresh 거절) 백스택 전체를 `[LoginRoute]`로 바꾼다.
+  - 로그인 실패 문구를 추가했다: 다른 기기 연결, 기기 해제, 시도 제한(N초), 서버 오류, 저장 실패.
+- **삭제**: `UnconfiguredAuthRepository`와 그 테스트를 지웠다. 주소가 없으면 `ApiClient`가 `NotConfigured`를 돌려주는 방식으로 대체했다.
+
+### 주요 변경 파일
+
+- network: `ApiEnvelope`, `ApiResult`, `ApiClient`, `ClientHeadersInterceptor`(`AuthPaths`), `TokenAuthenticator`(신규), `NetworkConfig`, `auth/AuthApi`, `di/NetworkModule`
+- data: `NetworkAuthRepository`, `SessionTokenRefresher`, `LocalSessionRepository`, `AccountSessionStore`(신규), `SessionCredentials`, `InstallationIdStore`(`RefreshKeyStore` 포함), `di/DataModule`, `di/NetworkIdentityModule`
+- database: `entity/LocalSessionEntity`, `dao/Daos`, `Migrations`(신규), `FspDatabase`(v2), `schemas/.../2.json`
+- domain: `AuthRepository`(`LoginResult.Success`, `LoginFailure` 확장, `AccountSession`, `SessionRepository`), `CredentialRules`(신규)
+- UI: `feature/auth/.../{LoginContract,LoginViewModel,LoginScreen,StartupEntry}`, `feature/dashboard/.../AccountHome`, `core/navigation/.../FspRoutes`, `app/.../navigation/{FspNavigation,BackStackOps}`
+- 테스트
+  - network: `ApiClientContractTest`, `TokenAuthenticatorTest`, `NetworkConfigTest`, `TestJson`
+  - data: `NetworkAuthRepositoryTest`, `SessionTokenRefresherTest`, `LocalSessionRepositoryTest`, `SessionCredentialsTest`, `DataTestEnv`
+  - domain: `CredentialRulesTest`
+  - UI: `StartupViewModelTest`, `AccountHomeViewModelTest`, `LoginViewModelTest`, `BackStackOpsTest`
+  - 계측: `FspDatabaseMigrationTest`, `LocalSessionDaoTest`, `FspNavigationRestorationTest`, `MainActivityFlowTest`
+
+### 설계 결정
+
+- **refresh 트리거**: OkHttp `Authenticator`로 구현했다. 호출 코드는 401을 신경 쓰지 않는다.
+  - 재시작 직후처럼 Access Token이 없으면 첫 요청이 Bearer 없이 나가고, 401을 받은 뒤 refresh한다. 서버 요청이 한 번 늘지만 만료 시각을 계산할 필요가 없다.
+  - `accessExpiresAt` 기준 선제 갱신은 하지 않았다.
+- **refresh 거절 분류**: 400·401·403·409·422 중 재시도 불가 응답은 세션 종료로 본다. 해당 코드는 `INVALID_REFRESH_TOKEN`, `TOKEN_REUSE_DETECTED`, `DEVICE_REVOKED`, `ACCOUNT_DISABLED`, `DEVICE_MISMATCH` 등이다. 그 밖의 응답은 일시 실패로 보고 세션을 유지한다.
+- **로그아웃은 로컬 우선**: 서버 폐기가 실패해도 로컬 토큰은 지운다. Refresh Token이 기기에 남지 않으므로 서버 세션은 만료될 때까지 쓸 수 없게 된다.
+- **세션 표시 정보**: 로그인 응답의 이름·loginId를 `local_session`에 저장해 오프라인에서도 표시한다. 계정 정보를 갱신하는 흐름(`/me`)은 이후 단계에서 붙인다.
+- **계정 홈 구성**: 역할별 대시보드(S03/S04)는 3~5단계 기능과 함께 만든다. 이번에는 하나의 `AccountHomeRoute`에서 역할만 표시한다.
+- **최소 지원 버전**: Android 8.0(API 26)을 유지한다. v1.4 명세의 클라이언트 최소 버전 표기도 이 기준으로 수정했다(문서 머리말 참고).
+
+### 실행한 검증과 결과
+
+- 단위 테스트 합계 115개, 실패 0개. 오래된 결과 파일은 제외하고 모듈별로 다시 셌다.
+  - domain 16개, data 35개, network 28개, security 6개, auth 13개, dashboard 9개, app 8개
+  - 계약 테스트(MockWebServer, 로컬 HTTP)는 v1.4 §14.1 예시 JSON을 그대로 사용했다. 검증한 항목은 다음과 같다.
+    - 로그인 요청 본문·헤더와 `X-Device-ID`=본문 deviceId
+    - refresh `Idempotency-Key`·Bearer 없음, logout Bearer·204
+    - 오류 `details`·`fields.message` 파싱, `OPERATION_IN_PROGRESS` 재시도 가능, `retryAfterSeconds` 대체값
+    - 401 → refresh 1회 → 재개(새 요청 ID), 두 번째 401에서 반복 없음, 인증 경로 제외
+    - 입력 사전 검증 시 요청 0회
+    - 실패 코드 매핑, 역할 불일치 거절, 저장 실패 시 롤백
+    - 일시 실패 시 같은 키 재사용(재시작 후 포함), 거절 시 세션 종료
+    - 세션 복원·로그아웃(서버 실패 시 포함·재시작 후 refresh 선행)
+- API 26 계측 테스트 합계 28개, 모두 통과.
+  - `:core:database:connectedDebugAndroidTest` 14개: 마이그레이션 1→2(기존 세션 보존·새 컬럼 NULL), `local_session` 현재·종료 쿼리 포함
+  - `:core:security:connectedDebugAndroidTest` 5개
+  - `:app:connectedDebugAndroidTest` 9개: 로그인 후 백스택 교체·복원·로그아웃, 시작 화면 경유 로그인·오프라인 흐름 포함
+  - 반복 실행: app 스위트 5회, security 스위트 5회 모두 통과했다.
+- 계측 테스트 중 수정한 것
+  - 1B-4에서 작성한 테스트 3곳이 무작위 Base64 암호문에 “ON”이나 “q1”이 우연히 포함되면 실패하는 결함이 있었다(약 1~2% 확률). 반복 실행 중 1회 실패해서 발견했다.
+  - 따옴표를 포함한 평문(`"status"`, `"q1"`)으로 검사하도록 고쳤다. 따옴표는 Base64에 나올 수 없으므로 결과가 결정적이다.
+  - 에뮬레이터 화면 꺼짐으로 app UI 테스트가 다시 실패한 적이 있다. 화면을 켜고 `screen_off_timeout`을 30분으로 늘린 뒤 다시 실행해 통과했다. 코드 문제가 아니다.
+- `:app:assembleDebug`, 모든 계측 APK 빌드: 성공.
+- Lint: app은 오류 0개, 경고 18개(이전과 같다). 나머지 모듈은 이슈가 없다.
+
+### 남은 문제·미검증 항목
+
+- **실서버 연동 미검증**: 서버 주소와 역할별 계정이 없어 로그인·refresh·logout은 로컬 MockWebServer로만 검증했다. TLS·실제 오류 본문·속도 제한도 미검증이다.
+- **동시성 검증 범위**: refresh single-flight는 “이미 교체된 토큰 재사용” 분기를 단위 테스트로 확인했다. 실제 동시 스레드 경쟁 테스트는 하지 않았다.
+- **refresh 60초 유예 이후**: 응답을 잃고 60초가 지난 뒤 같은 키로 재시도하면 서버가 `TOKEN_REUSE_DETECTED`로 세션 전체를 폐기한다(v1.4 §7.1). 이 경우 앱은 로그인 화면으로 보낸다. 명세상 피할 수 없는 동작이다.
+- **`/me` 미사용**: `MeResultDto`와 API 정의만 있다. 계정 상태·deviceNextSequence 재동기화는 3단계(근태)에서 사용한다.
+- **실기기 E2E 미검증**: 기기 계측 테스트는 서버 주소가 없는 빌드에서만 실행했다. 앱이 `usesCleartextTraffic=false`라서 기기에서 HTTP MockWebServer로 로그인 E2E를 하려면 TLS 테스트 서버가 필요하다.
+- **기기 업그레이드 경로**: 이전 v1 APK 설치 상태에서 새 APK로 업그레이드하는 과정은 `MigrationTestHelper`와 “기존 v1 데이터 보존” 계측 테스트로 대신했다.
+
+## 다음 단계: 2-2 시작 작업 (계정 입력 검증과 CSV 로컬 사전 검증)
+
+서버 없이 진행할 수 있다. 서버가 최종 검증하므로(v1.4 API-10), 앱의 사전 검증은 업로드 전 안내용이다.
+
+1. **도메인 규칙 확장**
+   - `CredentialRules`를 확장한다: 이름 `^[가-힣A-Za-z]{1,50}$`(공백 불가), grade 2/3만 허용.
+   - 아이디는 소문자로 정규화해 파일 안 중복(대소문자 무시)을 판단한다.
+2. **RFC 4180 CSV 파서**(`core:domain`, 순수 Kotlin)
+   - UTF-8과 BOM을 지원한다. 헤더는 정확히 `id,pw,name,grade` 순서다.
+   - 따옴표·이스케이프·따옴표 안 줄바꿈을 처리한다.
+   - 데이터 행 1~1,000개, 파일 1 MiB 한도를 둔다. 행 번호는 헤더를 1로 센다.
+3. **오류 형식**: v1.4 `CsvError`와 같게 만든다.
+   - 필드: `row`(1~1001), `field`(`id`/`pw`/`name`/`grade`/`row`), `code`
+   - 코드: `REQUIRED`, `INVALID_FORMAT`, `INVALID_GRADE`, `DUPLICATE_IN_FILE`, `INVALID_COLUMNS`. `ID_ALREADY_EXISTS`는 서버만 판단한다.
+   - 한 행에 여러 오류가 있으면 모두 반환한다. 최대 5,000개다.
+   - 파일 구조를 파싱할 수 없으면 서버의 `INVALID_CSV`에 해당하는 로컬 오류로 표시한다.
+4. **보안**: 비밀번호 원문은 오류·로그·`toString`에 넣지 않는다.
+5. **테스트**: BOM 유무, 따옴표 안 쉼표·따옴표·줄바꿈, 1,000/1,001행 경계, 1 MiB 경계, 헤더 순서 오류, 빈 셀, grade 1, 대소문자 중복, 한 행 복수 오류를 검증한다.
+6. **2-3·2-4를 위한 준비**: 아래 API의 계약을 따른다.
+   - 계정: API-05~12. `Idempotency-Key`는 06~11에 붙이고, `If-Match`는 07~09에 `User.resourceVersion`으로 붙인다. CSV `commit`은 본문 없이 보낸다.
+   - 할당: API-14, 16~19. `If-Match`는 `slotVersion`을 쓴다. 해제는 surveyId와 surveyVersion을 모두 null로 보내고 reason은 필수다.
+
+필요한 외부 정보(없으면 MockWebServer 계약 테스트까지만 진행하고 실서버 연동은 미검증으로 남긴다):
+- HTTPS API 기본 주소(`-Pfsp.apiBaseUrl=https://host/api/v1`)
+- 역할별(1/2/3) 테스트 계정
 
 전체 검증 명령(API 26 에뮬레이터 실행 및 화면 켜짐 상태 필요):
 

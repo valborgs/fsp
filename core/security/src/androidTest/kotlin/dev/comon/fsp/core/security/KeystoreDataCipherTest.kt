@@ -38,7 +38,7 @@ class KeystoreDataCipherTest {
         val a = cipher.encrypt(text, "row-1")
         val b = cipher.encrypt(text, "row-1")
         assertNotEquals(a, b)
-        assertFalse(a.contains("q1"))
+        assertFalse(a.contains("\"q1\"")) // quotes never occur in Base64
         assertEquals(text, cipher.decrypt(a, "row-1"))
         assertEquals(text, KeystoreDataCipher(alias).decrypt(b, "row-1")) // same key after "restart"
     }

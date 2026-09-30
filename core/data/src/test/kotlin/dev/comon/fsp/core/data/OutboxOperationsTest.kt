@@ -16,7 +16,7 @@ class OutboxOperationsTest {
 
     @Test fun storesEncryptedPayloadAsPendingRow() {
         val row = create()
-        assertFalse(row.payloadJson.contains("ON"))
+        assertFalse(row.payloadJson.contains("\"status\"")) // quotes never occur in Base64
         assertEquals(payload, operations.payload(row))
         assertEquals(OutboxState.PENDING, row.state)
         assertEquals(0, row.attemptCount)

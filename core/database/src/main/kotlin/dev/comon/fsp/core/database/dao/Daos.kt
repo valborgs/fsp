@@ -28,6 +28,16 @@ interface LocalSessionDao {
 
     @Query("SELECT * FROM local_session WHERE sessionId = :sessionId")
     suspend fun get(sessionId: String): LocalSessionEntity?
+
+    @Query("SELECT * FROM local_session WHERE endedAt IS NULL ORDER BY createdAt DESC, sessionId DESC LIMIT 1")
+    suspend fun current(): LocalSessionEntity?
+
+    @Query("SELECT * FROM local_session WHERE endedAt IS NULL ORDER BY createdAt DESC, sessionId DESC LIMIT 1")
+    fun observeCurrent(): Flow<LocalSessionEntity?>
+
+    /** Closes every open session; used on sign-in (before the new row), sign-out and expiry. */
+    @Query("UPDATE local_session SET endedAt = :endedAt WHERE endedAt IS NULL")
+    suspend fun endOpenSessions(endedAt: Long): Int
 }
 
 @Dao
